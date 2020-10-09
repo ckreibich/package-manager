@@ -1,16 +1,6 @@
 #! /usr/bin/env python
 
 from __future__ import print_function
-from zeekpkg._util import (
-    make_dir,
-    make_symlink,
-    find_program,
-    read_zeek_config_line,
-    std_encoding,
-)
-from zeekpkg.package import (
-    TRACKING_METHOD_VERSION,
-)
 
 import os
 import io
@@ -24,6 +14,26 @@ import filecmp
 import shutil
 import subprocess
 import json
+import glob
+
+# Specific to the Zeek-bundled installation: explictly add the Python
+# path we've installed ourselves under, so we find our own module:
+for sitepath in glob.glob(os.sep.join([
+        os.path.dirname(os.path.realpath(__file__)),
+        '..', 'lib*', 'python*', 'site-packages'])):
+    sys.path.append(os.path.abspath(sitepath))
+
+from zeekpkg._util import (
+    make_dir,
+    make_symlink,
+    find_program,
+    read_zeek_config_line,
+    std_encoding,
+)
+from zeekpkg.package import (
+    TRACKING_METHOD_VERSION,
+)
+
 
 try:
     from backports import configparser
