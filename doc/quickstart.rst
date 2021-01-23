@@ -161,6 +161,13 @@ When using non-standard location, follow these steps to integrate with
   And set the `SitePluginPath` option in :file:`zeekctl.cfg` based on the output
   you see.
 
+Zeek-bundled Operation
+----------------------
+
+Starting with Zeek 4.0, program:`zkg` supports installation within the Zeek tree.
+
+...
+ 
 Usage
 -----
 
