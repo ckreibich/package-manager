@@ -14,7 +14,7 @@
 # @TEST-EXEC: test ! -d home/testuser/.zkg
 
 # Now drop into shell to execute the following -- simplifies cleanup:
-# @TEST-EXEC: bash %INPUT >>output
+# @TEST-EXEC: bash -x %INPUT >>output
 
 cleanup() {
     chmod -R ug+w zeekroot
@@ -24,10 +24,17 @@ trap cleanup EXIT
 
 # Prevent writes to Zeek install:
 chmod -R ugo-w zeekroot
+echo $?
+ls -la
+
+env | sort
 
 # A package list should now fail, since zkg wants to write a state update
-! zkg-zeek list 2>&1
+zkg-zeek -vvv list 2>&1
 
+[ $? -ne 0 ] && exit 0
+
+exit 1
 # Switching to user mode, install a different package.
 # @TEST-EXEC: zkg-zeek --user --extra-source zeek=$(pwd)/sources/one install --force bar >>output
 #
