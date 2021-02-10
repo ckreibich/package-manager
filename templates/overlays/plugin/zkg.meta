@@ -1,0 +1,6 @@
+# zkg's package templating adds config settings in this file on top of
+# existing keys in the base image zkg.meta, overriding any that should
+# already exist.
+
+[package]
+build_command = cd plugin && ./configure && cd build && make
