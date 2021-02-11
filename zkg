@@ -2012,6 +2012,25 @@ def cmd_env(manager, args, config, configfile):
         print(u'export ZEEKPATH={}'.format(':'.join(zeekpaths)))
         print(u'export ZEEK_PLUGIN_PATH={}'.format(':'.join(pluginpaths)))
 
+def cmd_create(manager, args, config, configfile):
+    # Check some preliminaries:
+    if not os.path.isdir(args.output_dir):
+        print('Output directory {} does not exist.'.format(args.output_dir))
+        sys.exit(1)
+
+    # Create the template and its input arguments
+    tmpl = zeekpkg.template.PackageTemplate()
+    tmpl.populate(zeekpkg.template.TemplateArgs(
+        args.name, args.namespace, args.template_dir))
+
+    # Add overlay features as requested
+    if args.features is not None:
+        if 'plugin' in args.features:
+            tmpl.add_overlay(zeekpkg.Template.PluginOverlay())
+
+    # Make it so!
+    tmpl.instantiate(args.output_dir)
+
 
 class BundleHelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
     # Workaround for underlying argparse bug: https://bugs.python.org/issue9338
@@ -2475,6 +2494,37 @@ def argparser():
         ' can append package-specific paths to them.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     sub_parser.set_defaults(run_cmd=cmd_env)
+
+    # create
+    sub_parser = command_parser.add_parser(
+        'create',
+        help='Create a new Zeek package.',
+        description='This command instantiates a template for a new Zeek package'
+        ' on your system. All content ends up in new package directory, named'
+        ' after the package, in an output folder of your choosing.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    sub_parser.set_defaults(run_cmd=cmd_create)
+    sub_parser.add_argument(
+        '--features', nargs='+', choices=['plugin'],
+        help='Features your package will include.')
+    sub_parser.add_argument(
+        '--force', action='store_true',
+        help='If the package directory exists, remove it.')
+    sub_parser.add_argument(
+        '--name', metavar='STRING', required=True,
+        help='The name of the package, e.g. "FooBar".')
+    sub_parser.add_argument(
+        '--namespace', metavar='STRING',
+        help='An optional namespace of the package, e.g. "MyOrg". Script-layer'
+        ' and any C++ code use this namespace for additional structure.')
+    sub_parser.add_argument(
+        '--output_dir', metavar='PATH', default=os.curdir,
+        help='Output directory into which to place new package tree.'
+        ' This directory must exist.')
+    sub_parser.add_argument(
+        '--template_dir', metavar='PATH',
+        help='By default, zkg uses its own package template. Use this to'
+        ' make it use an alternative one.')
 
     return top_parser
 
