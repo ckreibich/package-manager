@@ -1,0 +1,21 @@
+module @PACKAGE_NS_COLONS@@PACKAGE_NAME@;
+
+%%{
+// This block is for required includes, declarations, and helper functions.
+%%}
+
+# Example of a built-in-function (BiF): returns a description of the plugin.
+function @PACKAGE_SLUG@_info(%): string
+%{
+	for ( const auto& p : zeek::plugin_mgr->ActivePlugins() )
+		{
+		if ( p->Name() == "@PACKAGE_NS_COLONS@@PACKAGE_NAME@" )
+			{
+			zeek::ODesc info;
+	                p->Describe(&info);
+			return zeek::make_intrusive<zeek::StringVal>(info.Description());
+			}
+		}
+
+	return zeek::make_intrusive<zeek::StringVal>("<unknown>");
+%}

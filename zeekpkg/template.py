@@ -2,6 +2,7 @@
 A module for instantiating different types of Zeek packages.
 """
 import os
+import shutil
 
 from . import (
     LOG,
@@ -15,117 +16,138 @@ class InputError(Error):
     """Something's amiss in the input arguments for a package."""
 
 
-class TemplateArgs():
+class OutputError(Error):
+    """Something's going wrong while producing template output."""
+
+
+class Args():
     """This class represents all input knowledge we require to
     instantiate a package."""
     def __init__(self, name, namespace=None, template_dir=None):
         self.vals = {
             'PACKAGE_NAME': name,
-            'PACKAGE_NAMESPACE': namespace or '',
-            'PACKAGE_NAMESPACE_SEP': namespace + '::' if namespace else '',
+            'PACKAGE_NS': namespace or '',
+            'PACKAGE_NS_COLONS': namespace + '::' if namespace else '',
+            'PACKAGE_NS_UNDERSCORE': namespace + '_' if namespace else '',
             'PACKAGE_SLUG': name.lower().replace('-', '_'),
         }
 
-        self.template_dir = template_dir or os.path.dirname(os.path.abspath(__file__)) + os.sep + 'templates'
+        # By default we locate the template input tree within our package.
+        # It ends up there via package_data in setup.py.
+        self.template_dir = template_dir or os.path.dirname(
+            os.path.abspath(__file__)) + os.sep + 'templates'
 
     def name(self):
         return self.vals['PACKAGE_NAME']
 
     def namespace(self):
-        return self.vals['PACKAGE_NAMESPACE']
+        return self.vals['PACKAGE_NS']
 
     def slug(self):
         return self.vals['PACKAGE_SLUG']
 
-    def validate(self):
-        if not self.name() or not self.name().isalnum():
-            raise InputError('Package name "{}" must be alphanumeric'
-                             .format(self.name()))
-        if self.namespace() and not self.namespace().isalnum():
-            raise InputError('Package namespace "{}" must be alphanumeric'
-                             .format(self.namespace))
-        if not os.path.isdir(self.template_dir):
-            raise Error('Template directory "{}" is unavailable'
-                        .format(self.template_dir))
 
+class Template:
+    """Common functionality for all template types."""
 
-class _TemplateBase:
-    """Common functionality for templates and overlays."""
+    FEATURE = None
+
     def __init__(self):
-        self._args = None
-
-    def instantiate(self, output_dir):
-        pass
-
-    def _replace(self, content):
-        for key in self._args.vals:
-            content = content.replace('@' + key + '@', self._args.vals[key])
-        return content
-
-    def _walk(self):
-        if self._args is None:
-            return
-
-        prefix = self._args.template_dir + os.sep + 'base'
-        for root, _, files in os.walk(prefix):
-            for f in files:
-                in_file = root + os.sep + f
-                out_path = self._replace(root[len(prefix)+1:])
-                out_file = self._replace(f)
-                try:
-                    with open(in_file) as hdl:
-                        out_content = self._replace(hdl.read())
-                except IOError:
-                    continue
-                yield out_path, out_file, out_content
-
-
-class PackageTemplate(_TemplateBase):
-    """Basic template for a plain, script-layer-only Zeek package."""
-    def __init__(self):
-        super().__init__()
         self._overlays = []
-
-    def populate(self, args):
-        args.validate()
-        self._args = args
 
     def add_overlay(self, overlay):
         self._overlays.append(overlay)
 
-    def instantiate(self, output_dir):
-        for path_name, file_name, content in self._walk():
-            LOG.debug('Instantiating %s / %s' % (path_name, file_name))
-            os.makedirs(path_name)
-            try:
-                with open(file_name, 'w') as hdl:
-                    hdl.write(content)
-            except IOError:
-                pass
+    def validate(self, args):
+        self._validate_impl(args)
         for ovly in self._overlays:
-            ovly.instantiate(output_dir)
+            ovly.validate(args)
 
+    def instantiate(self, args, output_dir, use_force=False):
+        self._instantiate_impl(args, output_dir, use_force)
+        for ovly in self._overlays:
+            ovly.instantiate(args, output_dir, use_force=use_force)
 
-class PackageOverlay(_TemplateBase):
-    """Overlays are partial templates that apply on top of another,,
-    with customized behavior for individual files as needed.
-    """
-    def __init__(self, tmpl):
-        super().__init__()
-        self._tmpl = tmpl
+    def _replace(self, args, content): # pylint: disable=no-self-use
+        for key in args.vals:
+            if isinstance(content, str):
+                content = content.replace('@' + key + '@', args.vals[key])
+            else:
+                content = content.replace(bytes('@' + key + '@', 'ascii'),
+                                          bytes(args.vals[key], 'ascii'))
+        return content
 
+    def _walk(self, args):
+        prefix = args.template_dir + os.sep + self.FEATURE
+        for root, _, files in os.walk(prefix):
+            for fname in files:
+                in_file = root + os.sep + fname
+                # Make any required substitutions to path and file names
+                out_path = self._replace(args, root[len(prefix)+1:])
+                out_file = self._replace(args, fname)
+                # Make substitutions to file content itself.
+                try:
+                    with open(in_file, 'rb') as hdl:
+                        out_content = self._replace(args, hdl.read())
+                except IOError as err:
+                    LOG.warning('skipping instantiation of %s: %s', in_file, err)
+                    continue
+                yield out_path, out_file, out_content
 
-class PluginOverlay(PackageOverlay):
-    def instantiate(self, output_dir):
-        for path_name, file_name, content in self._walk():
-            os.makedirs(path_name)
+    def _validate_impl(self, args):
+        pass
+
+    def _instantiate_impl(self, args, output_dir, use_force):
+        # pylint: disable=unused-argument
+        prefix = output_dir + os.sep + args.slug()
+        for path_name, file_name, content in self._walk(args):
+            os.makedirs(os.path.join(prefix, path_name), exist_ok=True)
             try:
-                with open(file_name, 'w') as hdl:
+                with open(os.path.join(prefix, path_name, file_name), 'wb') as hdl:
                     hdl.write(content)
-            except IOError:
-                pass
+            except IOError as err:
+                LOG.warning(err)
 
 
-class SpicyOverlay(PackageOverlay):
-    # Future work. :)
-    pass
+class PackageTemplate(Template):
+    """Basic template for a basic script-layer-only Zeek package."""
+    FEATURE = 'package'
+
+    def _validate_impl(self, args):
+        if not args.name() or not args.name().isalnum():
+            raise InputError('package name "{}" must be alphanumeric'
+                             .format(args.name()))
+        if args.namespace() and not args.namespace().isalnum():
+            raise InputError('package namespace "{}" must be alphanumeric'
+                             .format(args.namespace))
+        if not os.path.isdir(args.template_dir):
+            raise Error('template directory "{}" is unavailable'
+                        .format(args.template_dir))
+
+    def _instantiate_impl(self, args, output_dir, use_force):
+        prefix = output_dir + os.sep + args.slug()
+        if os.path.isdir(prefix):
+            if use_force:
+                try:
+                    shutil.rmtree(prefix)
+                    LOG.info('Removed existing template output directory %s', prefix)
+                except OSError as err:
+                    raise OutputError('could not remove output directory {}: {}'
+                                      .format(prefix, err)) from err
+            else:
+                raise OutputError('output directory {} already exists.'.format(prefix))
+
+        super()._instantiate_impl(args, output_dir, use_force)
+
+
+class Overlay(Template):
+    """Overlays add specific features to another template."""
+
+
+class PluginOverlay(Overlay):
+    """This overlay adds plugin support to a Zeek package."""
+    FEATURE = 'plugin'
+
+    def _validate_impl(self, args):
+        if not args.namespace():
+            raise InputError('no namespace provided. See --namespace.')

@@ -3,7 +3,8 @@
 # Wrapper for viewing/setting options that the plugin's CMake
 # scripts will recognize.
 #
-# Don't edit this. Edit configure.plugin to add plugin-specific options.
+# This file is maintained by zkg. Do not edit.
+# Modify configure.plugin to add plugin-specific options.
 #
 
 set -e

@@ -2013,23 +2013,32 @@ def cmd_env(manager, args, config, configfile):
         print(u'export ZEEK_PLUGIN_PATH={}'.format(':'.join(pluginpaths)))
 
 def cmd_create(manager, args, config, configfile):
-    # Check some preliminaries:
     if not os.path.isdir(args.output_dir):
-        print('Output directory {} does not exist.'.format(args.output_dir))
+        print_error('error: output directory {} does not exist.'.format(args.output_dir))
         sys.exit(1)
 
     # Create the template and its input arguments
     tmpl = zeekpkg.template.PackageTemplate()
-    tmpl.populate(zeekpkg.template.TemplateArgs(
-        args.name, args.namespace, args.template_dir))
+    targs = zeekpkg.template.Args(
+        args.name, args.namespace, args.template_dir)
 
-    # Add overlay features as requested
-    if args.features is not None:
-        if 'plugin' in args.features:
-            tmpl.add_overlay(zeekpkg.Template.PluginOverlay())
+    # Overlay any requested features:
+    if 'plugin' in args.features:
+        tmpl.add_overlay(zeekpkg.template.PluginOverlay())
+
+    # Verify that the input paramaters are okay for resulting package:
+    try:
+        tmpl.validate(targs)
+    except zeekpkg.template.InputError as err:
+        print_error('error: template input invalid, ' + str(err))
+        sys.exit(1)
 
     # Make it so!
-    tmpl.instantiate(args.output_dir)
+    try:
+        tmpl.instantiate(targs, args.output_dir, args.force)
+    except zeekpkg.template.OutputError as err:
+        print_error('error: template production failed, ' + str(err))
+        sys.exit(1)
 
 
 class BundleHelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
@@ -2505,7 +2514,7 @@ def argparser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     sub_parser.set_defaults(run_cmd=cmd_create)
     sub_parser.add_argument(
-        '--features', nargs='+', choices=['plugin'],
+        '--features', nargs='+', choices=['plugin'], default=[],
         help='Features your package will include.')
     sub_parser.add_argument(
         '--force', action='store_true',
@@ -2515,8 +2524,8 @@ def argparser():
         help='The name of the package, e.g. "FooBar".')
     sub_parser.add_argument(
         '--namespace', metavar='STRING',
-        help='An optional namespace of the package, e.g. "MyOrg". Script-layer'
-        ' and any C++ code use this namespace for additional structure.')
+        help='An optional namespace of the package, e.g. "MyOrg". Required'
+        ' when including a plugin in your package.')
     sub_parser.add_argument(
         '--output_dir', metavar='PATH', default=os.curdir,
         help='Output directory into which to place new package tree.'
