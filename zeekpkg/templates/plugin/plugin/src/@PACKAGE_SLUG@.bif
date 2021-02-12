@@ -1,15 +1,20 @@
-module @PACKAGE_NS_COLONS@@PACKAGE_NAME@;
+module @PACKAGE_NS@::@PACKAGE_NAME@;
 
 %%{
+
 // This block is for required includes, declarations, and helper functions.
+
+#include <zeek/Desc.h>
+#include <zeek/plugin/Manager.h>
+
 %%}
 
 # Example of a built-in-function (BiF): returns a description of the plugin.
-function @PACKAGE_SLUG@_info(%): string
+function info%(%): string
 %{
 	for ( const auto& p : zeek::plugin_mgr->ActivePlugins() )
 		{
-		if ( p->Name() == "@PACKAGE_NS_COLONS@@PACKAGE_NAME@" )
+		if ( p->Name() == "@PACKAGE_NS@::@PACKAGE_NAME@" )
 			{
 			zeek::ODesc info;
 	                p->Describe(&info);
