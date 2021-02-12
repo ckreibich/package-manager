@@ -1,28 +1,27 @@
 """
 A module for instantiating different types of Zeek packages.
 """
+import json
 import os
 import shutil
 
 from . import (
+    __version__,
     LOG,
 )
 
 class Error(Exception):
     """Base class for any template-related errors."""
 
-
 class InputError(Error):
     """Something's amiss in the input arguments for a package."""
-
 
 class OutputError(Error):
     """Something's going wrong while producing template output."""
 
 
 class Args():
-    """This class represents all input knowledge we require to
-    instantiate a package."""
+    """This class represents the input required to instantiate a package."""
     def __init__(self, name, namespace=None, template_dir=None):
         self.vals = {
             'PACKAGE_NAME': name,
@@ -46,14 +45,26 @@ class Args():
     def slug(self):
         return self.vals['PACKAGE_SLUG']
 
+    def json_data(self):
+        return {
+            'name': self.name(),
+            'namespace': self.namespace(),
+        }
+
 
 class Template:
     """Common functionality for all template types."""
 
+    # This string, set by subclasses, helps select the relevant
+    # template input tree on disk.
     FEATURE = None
 
     def __init__(self):
         self._overlays = []
+        # The toplevel package output directory, usually a folder in
+        # the output directory, named after the package. Set when
+        # instantiating.
+        self.package_dir = None
 
     def add_overlay(self, overlay):
         self._overlays.append(overlay)
@@ -64,7 +75,9 @@ class Template:
             ovly.validate(args)
 
     def instantiate(self, args, output_dir, use_force=False):
+        self.package_dir = output_dir + os.sep + args.slug()
         self._instantiate_impl(args, output_dir, use_force)
+
         for ovly in self._overlays:
             ovly.instantiate(args, output_dir, use_force=use_force)
 
@@ -82,29 +95,33 @@ class Template:
         for root, _, files in os.walk(prefix):
             for fname in files:
                 in_file = root + os.sep + fname
-                # Make any required substitutions to path and file names
+
+                # Substitutes directory and file names
                 out_path = self._replace(args, root[len(prefix)+1:])
                 out_file = self._replace(args, fname)
-                # Make substitutions to file content itself.
+
+                # Substitute file content.
                 try:
                     with open(in_file, 'rb') as hdl:
                         out_content = self._replace(args, hdl.read())
                 except IOError as err:
                     LOG.warning('skipping instantiation of %s: %s', in_file, err)
                     continue
-                yield out_path, out_file, out_content
+                yield in_file, out_path, out_file, out_content
 
     def _validate_impl(self, args):
         pass
 
     def _instantiate_impl(self, args, output_dir, use_force):
         # pylint: disable=unused-argument
-        prefix = output_dir + os.sep + args.slug()
-        for path_name, file_name, content in self._walk(args):
-            os.makedirs(os.path.join(prefix, path_name), exist_ok=True)
+        for orig_file, path_name, file_name, content in self._walk(args):
+            out_dir = os.path.join(self.package_dir, path_name)
+            out_file = os.path.join(out_dir, file_name)
+            os.makedirs(out_dir, exist_ok=True)
             try:
-                with open(os.path.join(prefix, path_name, file_name), 'wb') as hdl:
+                with open(out_file, 'wb') as hdl:
                     hdl.write(content)
+                shutil.copymode(orig_file, out_file)
             except IOError as err:
                 LOG.warning(err)
 
@@ -125,23 +142,37 @@ class PackageTemplate(Template):
                         .format(args.template_dir))
 
     def _instantiate_impl(self, args, output_dir, use_force):
-        prefix = output_dir + os.sep + args.slug()
-        if os.path.isdir(prefix):
+        if os.path.isdir(self.package_dir):
             if use_force:
                 try:
-                    shutil.rmtree(prefix)
-                    LOG.info('Removed existing template output directory %s', prefix)
+                    shutil.rmtree(self.package_dir)
+                    LOG.info('Removed existing template output directory %s', self.package_dir)
                 except OSError as err:
                     raise OutputError('could not remove output directory {}: {}'
-                                      .format(prefix, err)) from err
+                                      .format(self.package_dir, err)) from err
             else:
-                raise OutputError('output directory {} already exists.'.format(prefix))
+                raise OutputError('output directory {} already exists.'
+                                  .format(self.package_dir))
 
         super()._instantiate_impl(args, output_dir, use_force)
 
+        # Preserve template itself for baselining in future migrations
+        shutil.copytree(args.template_dir, self.package_dir + os.sep + '.zkg/template')
+
+        # Record the invocation details for posterity:
+        try:
+            with open(self.package_dir + os.sep + '.zkg/template.json', 'w') as hdl:
+                json.dump({
+                    'args': args.json_data(),
+                    'version': __version__,
+                }, hdl, indent=4)
+        except IOError as err:
+            raise OutputError('could not record template instantiation details: {}'
+                              .format(err)) from err
+
 
 class Overlay(Template):
-    """Overlays add specific features to another template."""
+    """Overlays add additional features to a template."""
 
 
 class PluginOverlay(Overlay):
