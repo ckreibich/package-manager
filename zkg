@@ -2025,6 +2025,8 @@ def cmd_create(manager, args, config, configfile):
     # Overlay any requested features:
     if 'plugin' in args.features:
         tmpl.add_overlay(zeekpkg.template.PluginOverlay())
+    if 'github-ci' in args.features:
+        tmpl.add_overlay(zeekpkg.template.GithubCiOverlay())
 
     # Verify that the input paramaters are okay for resulting package:
     try:
@@ -2514,7 +2516,7 @@ def argparser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     sub_parser.set_defaults(run_cmd=cmd_create)
     sub_parser.add_argument(
-        '--features', nargs='+', choices=['plugin'], default=[],
+        '--features', nargs='+', choices=['github-ci', 'plugin'], default=[],
         help='Features your package will include.')
     sub_parser.add_argument(
         '--force', action='store_true',

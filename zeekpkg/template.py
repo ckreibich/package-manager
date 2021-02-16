@@ -182,3 +182,8 @@ class PluginOverlay(Overlay):
     def _validate_impl(self, args):
         if not args.namespace():
             raise InputError('no namespace provided. See --namespace.')
+
+
+class GithubCiOverlay(Overlay):
+    """This overlay adds support for CI workflows in Github."""
+    FEATURE = 'github-ci'

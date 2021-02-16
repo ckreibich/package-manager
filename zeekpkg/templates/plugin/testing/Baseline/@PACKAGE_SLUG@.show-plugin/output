@@ -1,3 +1,2 @@
-Corelight::FooBar - TODO: Insert description (dynamic, version)
-    [Function] Corelight::FooBar::info
+@PACKAGE_NS@::@PACKAGE_NAME@ - TODO: Insert description (dynamic, version)
 
