@@ -2,7 +2,7 @@
 # Put required additional cmake functionality into plugin.cmake.
 cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
 
-project(ZeekPlugin@PACKAGE_NAME@)
+project(ZeekPlugin@NAME@)
 
 # Establish version numbers in config.h
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" VERSION LIMIT_COUNT 1)
@@ -24,7 +24,7 @@ set(BRO_PLUGIN_BASE "${CMAKE_CURRENT_SOURCE_DIR}/plugin")
 
 include(ZeekPlugin)
 
-zeek_plugin_begin(@PACKAGE_NS@ @PACKAGE_NAME@)
+zeek_plugin_begin(@NS@ @NAME@)
 
 file(GLOB cc_files RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "plugin/src/*.cc")
 foreach(file ${cc_files})

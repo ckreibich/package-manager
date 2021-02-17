@@ -1,4 +1,4 @@
-module @PACKAGE_NS@::@PACKAGE_NAME@;
+module @NS@::@NAME@;
 
 %%{
 
@@ -7,7 +7,7 @@ module @PACKAGE_NS@::@PACKAGE_NAME@;
 %%}
 
 # Built-in function implementations follow here. For help on these, see
-# 
+#
 # function foobar%(%): string
 # %{
 #	// ...

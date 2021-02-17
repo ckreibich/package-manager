@@ -3,7 +3,7 @@
 #include <zeek/plugin/Plugin.h>
 
 namespace plugin {
-namespace @PACKAGE_NS_UNDERSCORE@@PACKAGE_NAME@ {
+namespace @NS_UNDERSCORE@@NAME@ {
 
 class Plugin : public zeek::plugin::Plugin
 {

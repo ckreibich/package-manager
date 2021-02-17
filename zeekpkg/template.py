@@ -1,13 +1,28 @@
 """
 A module for instantiating different types of Zeek packages.
 """
+import abc
+import configparser
+import importlib.machinery
 import json
+import re
 import os
 import shutil
+import sys
+import types
 
 from . import (
     __version__,
     LOG,
+)
+
+from .package import (
+    METADATA_FILENAME,
+)
+
+from ._util import (
+    delete_path,
+    slugify,
 )
 
 class Error(Exception):
@@ -20,102 +35,166 @@ class OutputError(Error):
     """Something's going wrong while producing template output."""
 
 
-class Args():
+class TemplateArgs():
+
     """This class represents the input required to instantiate a package."""
-    def __init__(self, name, namespace=None, template_dir=None):
-        self.vals = {
-            'PACKAGE_NAME': name,
-            'PACKAGE_NS': namespace or '',
-            'PACKAGE_NS_COLONS': namespace + '::' if namespace else '',
-            'PACKAGE_NS_UNDERSCORE': namespace + '_' if namespace else '',
-            'PACKAGE_SLUG': name.lower().replace('-', '_'),
-        }
+    def __init__(self, tinfo):
+        self.templatedir = tinfo.templatedir()
+        self.vals = {}
+        self.derivatives = set()
 
-        # By default we locate the template input tree within our package.
-        # It ends up there via package_data in setup.py.
-        self.template_dir = template_dir or os.path.dirname(
-            os.path.abspath(__file__)) + os.sep + 'templates'
+    def define(self, key, val, is_derivative=False):
+        self.vals[key] = val
+        if is_derivative:
+            self.derivatives.add(key)
 
+    def get(self, key, default=None):
+        return self.vals.get(key, default)
+
+    def canonical_data(self):
+        res = {}
+        for key, val in self.vals.items():
+            if val and not key in self.derivatives:
+                res[key] = val
+        return res
+
+
+class TemplateInfo(metaclass=abc.ABCMeta):
+    """Base class for any template. Templates need to define this in their
+    toplevel __init__.py and implement at least the abstract functions."""
+
+    DEFAULT_TEMPLATEDIR = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        'default_template')
+
+    @staticmethod
+    def instantiate(templatedir=None):
+        templatedir = os.path.abspath(templatedir or TemplateInfo.DEFAULT_TEMPLATEDIR)
+        dirname = os.path.basename(templatedir)
+        filename = os.path.join(templatedir, '__init__.py')
+
+        # We need to load this module, reobustly. This is not Python's finest hour...
+        # https://stackoverflow.com/questions/67631/how-to-import-a-module-given-the-full-path
+        loader = importlib.machinery.SourceFileLoader('template_' + dirname, filename)
+        if hasattr(loader, 'exec_module'):
+            mod = types.ModuleType(loader.name)
+            loader.exec_module(mod)
+        else:
+            mod = loader.load_module()
+        return mod.TemplateInfo(templatedir)
+
+    def __init__(self, templatedir):
+        self._templatedir = templatedir
+
+    def templatedir(self):
+        return self._templatedir
+
+    @abc.abstractmethod
     def name(self):
-        return self.vals['PACKAGE_NAME']
+        """A name for this template (not the instance)"""
+        return None
 
-    def namespace(self):
-        return self.vals['PACKAGE_NS']
+    @abc.abstractmethod
+    def version(self):
+        """A version string describing the template."""
+        return None
 
-    def slug(self):
-        return self.vals['PACKAGE_SLUG']
+    @abc.abstractmethod
+    def argparse_setup(self, parser):
+        """Adds required command-line arguments to the argparse parser."""
 
-    def json_data(self):
-        return {
-            'name': self.name(),
-            'namespace': self.namespace(),
-        }
+    @abc.abstractmethod
+    def argparse_process(self, args, targs):
+        """Processes given command line arguments into template arguments."""
+
+    @abc.abstractmethod
+    def get_package(self):
+        """Returns zeekpkg.template.Package instance.
+
+        Every template must provide a package to start from.
+        """
+        return None
+
+    def get_features(self): # pylint: disable=no-self-use
+        """Returns list of any features provided by the template.
+
+        If supported, each list member must be a zeekpkg.template.Feature instance.
+        """
+        return []
 
 
-class Template:
-    """Common functionality for all template types."""
-
-    # This string, set by subclasses, helps select the relevant
-    # template input tree on disk.
-    FEATURE = None
+class _TemplateBase(metaclass=abc.ABCMeta):
+    """Abstract base class with Common functionality for all template data."""
 
     def __init__(self):
-        self._overlays = []
-        # The toplevel package output directory, usually a folder in
-        # the output directory, named after the package. Set when
-        # instantiating.
-        self.package_dir = None
+        self._features = []
 
-    def add_overlay(self, overlay):
-        self._overlays.append(overlay)
+    @abc.abstractmethod
+    def content_dir(self):
+        """Returns the directory in which this specific template's contents
+        reside in the overall template tree."""
+        return None
 
-    def validate(self, args):
-        self._validate_impl(args)
-        for ovly in self._overlays:
-            ovly.validate(args)
+    def add_feature(self, feature):
+        self._features.append(feature)
 
-    def instantiate(self, args, output_dir, use_force=False):
-        self.package_dir = output_dir + os.sep + args.slug()
-        self._instantiate_impl(args, output_dir, use_force)
+    def validate(self, targs):
+        # Base validation for any template instantiation:
+        if not os.path.isdir(targs.templatedir):
+            raise Error(
+                'template directory "{}" is unavailable'
+                .format(targs.templatedir))
 
-        for ovly in self._overlays:
-            ovly.instantiate(args, output_dir, use_force=use_force)
+        if not targs.get('name'):
+            raise InputError('template must provide name for the new package')
 
-    def _replace(self, args, content): # pylint: disable=no-self-use
-        for key in args.vals:
-            if isinstance(content, str):
-                content = content.replace('@' + key + '@', args.vals[key])
-            else:
-                content = content.replace(bytes('@' + key + '@', 'ascii'),
-                                          bytes(args.vals[key], 'ascii'))
+        if not targs.get('name').isalnum():
+            raise InputError(
+                'package name "{}" must be alphanumeric'
+                .format(targs.get('name')))
+
+        for feature in self._features:
+            feature.validate(targs)
+
+    def instantiate(self, tinfo, targs, packagedir, use_force=False):
+        # pylint: disable=unused-argument
+        self._instantiate(targs, packagedir, use_force)
+        for feature in self._features:
+            feature.instantiate(tinfo, targs, packagedir, use_force)
+
+    def _replace(self, targs, content): # pylint: disable=no-self-use
+        for key, val in targs.vals.items():
+            pat = '@' + key + '@'
+            if not isinstance(content, str):
+                pat = bytes(pat, 'ascii')
+                val = bytes(val, 'ascii')
+            content = re.sub(pat, val, content, flags=re.IGNORECASE)
+
         return content
 
-    def _walk(self, args):
-        prefix = args.template_dir + os.sep + self.FEATURE
+    def _walk(self, targs):
+        prefix = os.path.join(targs.templatedir, self.content_dir())
         for root, _, files in os.walk(prefix):
             for fname in files:
                 in_file = root + os.sep + fname
 
                 # Substitutes directory and file names
-                out_path = self._replace(args, root[len(prefix)+1:])
-                out_file = self._replace(args, fname)
+                out_path = self._replace(targs, root[len(prefix)+1:])
+                out_file = self._replace(targs, fname)
 
                 # Substitute file content.
                 try:
                     with open(in_file, 'rb') as hdl:
-                        out_content = self._replace(args, hdl.read())
+                        out_content = self._replace(targs, hdl.read())
                 except IOError as err:
                     LOG.warning('skipping instantiation of %s: %s', in_file, err)
                     continue
                 yield in_file, out_path, out_file, out_content
 
-    def _validate_impl(self, args):
-        pass
-
-    def _instantiate_impl(self, args, output_dir, use_force):
+    def _instantiate(self, targs, packagedir, use_force):
         # pylint: disable=unused-argument
-        for orig_file, path_name, file_name, content in self._walk(args):
-            out_dir = os.path.join(self.package_dir, path_name)
+        for orig_file, path_name, file_name, content in self._walk(targs):
+            out_dir = os.path.join(packagedir, path_name)
             out_file = os.path.join(out_dir, file_name)
             os.makedirs(out_dir, exist_ok=True)
             try:
@@ -125,65 +204,55 @@ class Template:
             except IOError as err:
                 LOG.warning(err)
 
+    def _update_metadata(self, tinfo, targs, packagedir):
+        config = configparser.ConfigParser(delimiters='=')
+        config.optionxform = str
+        section = 'template'
+        manifest_file = os.path.join(packagedir, METADATA_FILENAME)
 
-class PackageTemplate(Template):
-    """Basic template for a basic script-layer-only Zeek package."""
-    FEATURE = 'package'
+        if config.read(manifest_file):
+            if not config.has_section(section):
+                config.add_section(section)
+            config.set(section, 'source', tinfo.name())
+            config.set(section, 'version', tinfo.version())
+            config.set(section, 'zkg_version', __version__)
+            if self._features:
+                val = ','.join(sorted([f.name() for f in self._features]))
+                config.set(section, 'features', val)
+            data = targs.canonical_data()
+            for key in sorted(data.keys()):
+                config.set(section, 'arg.' + key, data[key])
 
-    def _validate_impl(self, args):
-        if not args.name() or not args.name().isalnum():
-            raise InputError('package name "{}" must be alphanumeric'
-                             .format(args.name()))
-        if args.namespace() and not args.namespace().isalnum():
-            raise InputError('package namespace "{}" must be alphanumeric'
-                             .format(args.namespace))
-        if not os.path.isdir(args.template_dir):
-            raise Error('template directory "{}" is unavailable'
-                        .format(args.template_dir))
+        with open(manifest_file, 'w') as hdl:
+            config.write(hdl)
 
-    def _instantiate_impl(self, args, output_dir, use_force):
-        if os.path.isdir(self.package_dir):
+
+class Package(_TemplateBase):
+    def instantiate(self, tinfo, targs, packagedir, use_force=False):
+        if os.path.isdir(packagedir):
             if use_force:
                 try:
-                    shutil.rmtree(self.package_dir)
-                    LOG.info('Removed existing template output directory %s', self.package_dir)
+                    delete_path(packagedir)
+                    LOG.info('Removed existing package directory %s', packagedir)
                 except OSError as err:
-                    raise OutputError('could not remove output directory {}: {}'
-                                      .format(self.package_dir, err)) from err
+                    raise OutputError('could not remove package directory {}: {}'
+                                      .format(packagedir, err)) from err
             else:
-                raise OutputError('output directory {} already exists.'
-                                  .format(self.package_dir))
+                raise OutputError('package directory {} already exists. Use'
+                                  ' --force to delete and recreate.'
+                                  .format(packagedir))
+        else:
+            os.makedirs(packagedir, exist_ok=True)
 
-        super()._instantiate_impl(args, output_dir, use_force)
+        super().instantiate(tinfo, targs, packagedir, use_force)
 
-        # Preserve template itself for baselining in future migrations
-        shutil.copytree(args.template_dir, self.package_dir + os.sep + '.zkg/template')
-
-        # Record the invocation details for posterity:
-        try:
-            with open(self.package_dir + os.sep + '.zkg/template.json', 'w') as hdl:
-                json.dump({
-                    'args': args.json_data(),
-                    'version': __version__,
-                }, hdl, indent=4)
-        except IOError as err:
-            raise OutputError('could not record template instantiation details: {}'
-                              .format(err)) from err
+        self._update_metadata(tinfo, targs, packagedir)
 
 
-class Overlay(Template):
-    """Overlays add additional features to a template."""
+class Feature(_TemplateBase):
 
+    """Features overlay additional functionality onto a template."""
 
-class PluginOverlay(Overlay):
-    """This overlay adds plugin support to a Zeek package."""
-    FEATURE = 'plugin'
-
-    def _validate_impl(self, args):
-        if not args.namespace():
-            raise InputError('no namespace provided. See --namespace.')
-
-
-class GithubCiOverlay(Overlay):
-    """This overlay adds support for CI workflows in Github."""
-    FEATURE = 'github-ci'
+    def name(self):
+        """A name for this feature. Defaults to its content directory."""
+        return self.content_dir() or 'unnamed'

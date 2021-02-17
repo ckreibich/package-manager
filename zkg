@@ -12,6 +12,7 @@ import subprocess
 import json
 import configparser
 import sys
+import types
 
 from collections import OrderedDict
 
@@ -2012,23 +2013,23 @@ def cmd_env(manager, args, config, configfile):
         print(u'export ZEEKPATH={}'.format(':'.join(zeekpaths)))
         print(u'export ZEEK_PLUGIN_PATH={}'.format(':'.join(pluginpaths)))
 
-def cmd_create(manager, args, config, configfile):
-    if not os.path.isdir(args.output_dir):
-        print_error('error: output directory {} does not exist.'.format(args.output_dir))
-        sys.exit(1)
+def cmd_create_preparse(args):
+    return zeekpkg.TemplateInfo.instantiate(args.template)
 
-    # Create the template and its input arguments
-    tmpl = zeekpkg.template.PackageTemplate()
-    targs = zeekpkg.template.Args(
-        args.name, args.namespace, args.template_dir)
+def cmd_create(manager, args, config, configfile):
+    tinfo = zeekpkg.TemplateInfo.instantiate(args.template)
+    targs = zeekpkg.TemplateArgs(tinfo)
+    tinfo.argparse_process(args, targs)
+
+    tmpl = tinfo.get_package()
 
     # Overlay any requested features:
-    if 'plugin' in args.features:
-        tmpl.add_overlay(zeekpkg.template.PluginOverlay())
-    if 'github-ci' in args.features:
-        tmpl.add_overlay(zeekpkg.template.GithubCiOverlay())
+    if args.features:
+        for feature in tinfo.get_features():
+            if feature.name() in args.features:
+                tmpl.add_feature(feature)
 
-    # Verify that the input paramaters are okay for resulting package:
+    # Verify that input paramaters are acceptable for template instantiation
     try:
         tmpl.validate(targs)
     except zeekpkg.template.InputError as err:
@@ -2037,9 +2038,9 @@ def cmd_create(manager, args, config, configfile):
 
     # Make it so!
     try:
-        tmpl.instantiate(targs, args.output_dir, args.force)
+        tmpl.instantiate(tinfo, targs, args.packagedir, args.force)
     except zeekpkg.template.OutputError as err:
-        print_error('error: template production failed, ' + str(err))
+        print_error('error: template instantiation failed, ' + str(err))
         sys.exit(1)
 
 
@@ -2057,8 +2058,9 @@ class BundleHelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
         return rval
 
 
-def top_level_parser():
+def top_level_parser(is_preparse):
     top_parser = argparse.ArgumentParser(
+        add_help=not is_preparse,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description='A command-line package manager for Zeek.',
         epilog='Environment Variables:\n\n'
@@ -2082,10 +2084,11 @@ def top_level_parser():
                             ' Use multiple times for more output (e.g. -vvv).')
     top_parser.add_argument('--extra-source', action='append',
                             metavar='NAME=URL', help='Add an extra source.')
+    top_parser.set_defaults(preparse_cmd=None)
     return top_parser
 
 
-def argparser():
+def argparser(is_preparse, preparse_state=None):
     pkg_name_help = 'The name(s) of package(s) to operate on.  The package' \
                     ' may be named in several ways.  If the package is part' \
                     ' of a package source, it may be referred to by the' \
@@ -2101,11 +2104,11 @@ def argparser():
                     ' "alice/bro-pkg.index", the following' \
                     ' names work: "foo", "alice/foo", "zeek/alice/foo".'
 
-    top_parser = top_level_parser()
+    top_parser = top_level_parser(is_preparse)
     command_parser = top_parser.add_subparsers(
         title='commands', dest='command',
         help='See `%(prog)s <command> -h` for per-command usage info.')
-    command_parser.required = True
+    command_parser.required = not is_preparse
 
     # test
     sub_parser = command_parser.add_parser(
@@ -2507,41 +2510,41 @@ def argparser():
     sub_parser.set_defaults(run_cmd=cmd_env)
 
     # create
+    tinfo = preparse_state
+    tname = tinfo.name() if tinfo else None
+    tdescr = ' from template "{}"'.format(tname) if tname else ''
+    feature_choices = None if tinfo is None else sorted([f.name() for f in tinfo.get_features()])
+
     sub_parser = command_parser.add_parser(
-        'create',
+        'create', add_help=not is_preparse,
         help='Create a new Zeek package.',
-        description='This command instantiates a template for a new Zeek package'
-        ' on your system. All content ends up in new package directory, named'
-        ' after the package, in an output folder of your choosing.',
+        description='This command creates a new Zeek package{} in the directory'
+        ' provided via --packagedir. If this directory exists zkg will not'
+        ' modify it. Use --force to allow zkg to delete and recreate it.'.format(tdescr),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    sub_parser.set_defaults(run_cmd=cmd_create)
+    sub_parser.set_defaults(run_cmd=cmd_create, preparse_cmd=cmd_create_preparse)
     sub_parser.add_argument(
-        '--features', nargs='+', choices=['github-ci', 'plugin'], default=[],
-        help='Features your package will include.')
+        '--packagedir', metavar='DIR', required=not is_preparse,
+        help='Output directory into which to produce the new package.')
     sub_parser.add_argument(
         '--force', action='store_true',
-        help='If the package directory exists, remove it.')
+        help='If the package output directory exists, remove and re-create it.')
     sub_parser.add_argument(
-        '--name', metavar='STRING', required=True,
-        help='The name of the package, e.g. "FooBar".')
+        '--features', nargs='+', choices=feature_choices,
+        help='Additional features to include in your package.')
     sub_parser.add_argument(
-        '--namespace', metavar='STRING',
-        help='An optional namespace of the package, e.g. "MyOrg". Required'
-        ' when including a plugin in your package.')
-    sub_parser.add_argument(
-        '--output_dir', metavar='PATH', default=os.curdir,
-        help='Output directory into which to place new package tree.'
-        ' This directory must exist.')
-    sub_parser.add_argument(
-        '--template_dir', metavar='PATH',
+        '--template', metavar='URL',
         help='By default, zkg uses its own package template. Use this to'
         ' make it use an alternative one.')
+
+    if tinfo:
+        tinfo.argparse_setup(sub_parser)
 
     return top_parser
 
 
 def main():
-    args = argparser().parse_args()
+    args, _ = argparser(True).parse_known_args()
 
     if args.verbose > 0:
         formatter = logging.Formatter(
@@ -2557,6 +2560,11 @@ def main():
             zeekpkg.LOG.setLevel(logging.DEBUG)
 
         zeekpkg.LOG.addHandler(handler)
+
+    # If a command indicates it would like two-stage processing of the
+    # arguments so it can adapt the parsers, do so now:
+    preparse_state = args.preparse_cmd(args) if args.preparse_cmd else None
+    args = argparser(False, preparse_state).parse_args()
 
     configfile = args.configfile
 

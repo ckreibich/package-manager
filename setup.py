@@ -6,7 +6,7 @@ install_requires = ['gitpython', 'semantic_version', 'btest']
 def package_data(package):
     res = []
     for root, _, files in os.walk(
-            package + os.sep + 'templates', followlinks=True):
+            package + os.sep + 'default_template', followlinks=True):
         for f in files:
             res.append(root[len(package)+1:] + os.sep + f)
     return {package: res}

@@ -1,4 +1,4 @@
-module @PACKAGE_NS_COLONS@@PACKAGE_NAME@;
+module @NS_COLONS@@NAME@;
 
 event zeek_init()
 	{

@@ -4,6 +4,7 @@ These are meant to be private utility methods for internal use.
 
 import os
 import errno
+import re
 import shutil
 import git
 
@@ -237,3 +238,12 @@ def get_zeek_version():
                            bufsize=1, universal_newlines=True)
 
     return read_zeek_config_line(cmd.stdout)
+
+
+def slugify(name):
+    """Returns a file-system-safe, lower-case version of the input string.
+
+    Any character sequence outside of [a-zA-Z0-9_]+ gets replaced by a
+    single underscore.
+    """
+    return re.sub(r'[^\w]+', '_', name, flags=re.ASCII).lower()
