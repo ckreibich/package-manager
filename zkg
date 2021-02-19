@@ -2013,11 +2013,11 @@ def cmd_env(manager, args, config, configfile):
         print(u'export ZEEKPATH={}'.format(':'.join(zeekpaths)))
         print(u'export ZEEK_PLUGIN_PATH={}'.format(':'.join(pluginpaths)))
 
-def cmd_create_preparse(args):
-    return zeekpkg.TemplateInfo.instantiate(args.template)
+def cmd_create_preparse(args, config):
+    return zeekpkg.TemplateInfo.load(config, args.template)
 
 def cmd_create(manager, args, config, configfile):
-    tinfo = zeekpkg.TemplateInfo.instantiate(args.template)
+    tinfo = zeekpkg.TemplateInfo.load(config, args.template)
     targs = zeekpkg.TemplateArgs(tinfo)
     tinfo.argparse_process(args, targs)
 
@@ -2535,7 +2535,7 @@ def argparser(is_preparse, preparse_state=None):
     sub_parser.add_argument(
         '--template', metavar='URL',
         help='By default, zkg uses its own package template. Use this to'
-        ' make it use an alternative one.')
+        ' select an alternative one.')
 
     if tinfo:
         tinfo.argparse_setup(sub_parser)
@@ -2544,6 +2544,11 @@ def argparser(is_preparse, preparse_state=None):
 
 
 def main():
+    # We parse the command line arguments twice, first as a
+    # "pre-parse" that allows zkg to adjust supported arguments
+    # depending on other arguments, and then once more with the final
+    # parser configuration. When pre-parsing, we ignore unknown
+    # arguments, don't invoke argparsers default help, etc.
     args, _ = argparser(True).parse_known_args()
 
     if args.verbose > 0:
@@ -2561,17 +2566,19 @@ def main():
 
         zeekpkg.LOG.addHandler(handler)
 
-    # If a command indicates it would like two-stage processing of the
-    # arguments so it can adapt the parsers, do so now:
-    preparse_state = args.preparse_cmd(args) if args.preparse_cmd else None
-    args = argparser(False, preparse_state).parse_args()
-
     configfile = args.configfile
 
     if not configfile:
         configfile = find_configfile(args)
 
     config = create_config(args, configfile)
+
+    # Process any pre-parse information, then do final parse:
+    preparse_state = None
+    if args.preparse_cmd:
+        preparse_state = args.preparse_cmd(args, config)
+
+    args = argparser(False, preparse_state).parse_args()
     manager = create_manager(args, config)
 
     args.run_cmd(manager, args, config, configfile)

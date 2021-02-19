@@ -7,6 +7,8 @@ import errno
 import re
 import shutil
 import git
+import importlib.machinery
+import types
 
 
 def make_dir(path):
@@ -247,3 +249,19 @@ def slugify(name):
     single underscore.
     """
     return re.sub(r'[^\w]+', '_', name, flags=re.ASCII).lower()
+
+
+def load_source(filename):
+    """Loads the given Python script file and returns it as a module."""
+    # This is more complicated than one would think... for reference:
+    # https://stackoverflow.com/questions/67631/how-to-import-a-module-given-the-full-path
+    absname = os.path.abspath(filename)
+    dirname = os.path.dirname(absname)
+    loader = importlib.machinery.SourceFileLoader('template_' + dirname, absname)
+    if hasattr(loader, 'exec_module'):
+        mod = types.ModuleType(loader.name)
+        loader.exec_module(mod)
+    else:
+        mod = loader.load_module()
+
+    return mod

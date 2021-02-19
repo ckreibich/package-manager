@@ -3,25 +3,26 @@ A module for instantiating different types of Zeek packages.
 """
 import abc
 import configparser
-import importlib.machinery
 import json
 import re
 import os
 import shutil
 import sys
-import types
 
-from . import (
-    __version__,
-    LOG,
-)
+import git
+
+from . import (__version__, LOG)
 
 from .package import (
     METADATA_FILENAME,
+    name_from_path,
 )
 
 from ._util import (
     delete_path,
+    git_clone,
+    load_source,
+    make_dir,
     slugify,
 )
 
@@ -68,19 +69,18 @@ class TemplateInfo(metaclass=abc.ABCMeta):
         'default_template')
 
     @staticmethod
-    def instantiate(templatedir=None):
-        templatedir = os.path.abspath(templatedir or TemplateInfo.DEFAULT_TEMPLATEDIR)
-        dirname = os.path.basename(templatedir)
-        filename = os.path.join(templatedir, '__init__.py')
+    def load(config, templatedir=None):
+        templatedir = templatedir or TemplateInfo.DEFAULT_TEMPLATEDIR
+        if templatedir and not os.path.isdir(templatedir):
+            template_clonedir = os.path.join(
+                config.get('paths', 'state_dir'), 'clones', 'template')
+            outputdir = os.path.join(template_clonedir, name_from_path(templatedir))
+            make_dir(template_clonedir)
+            delete_path(outputdir)
+            git_clone(templatedir, outputdir)
+            templatedir = outputdir
 
-        # We need to load this module, reobustly. This is not Python's finest hour...
-        # https://stackoverflow.com/questions/67631/how-to-import-a-module-given-the-full-path
-        loader = importlib.machinery.SourceFileLoader('template_' + dirname, filename)
-        if hasattr(loader, 'exec_module'):
-            mod = types.ModuleType(loader.name)
-            loader.exec_module(mod)
-        else:
-            mod = loader.load_module()
+        mod = load_source(os.path.join(templatedir, '__init__.py'))
         return mod.TemplateInfo(templatedir)
 
     def __init__(self, templatedir):
@@ -128,6 +128,7 @@ class _TemplateBase(metaclass=abc.ABCMeta):
 
     def __init__(self):
         self._features = []
+        self._templatedir = None # Set when we instantiate
 
     @abc.abstractmethod
     def content_dir(self):
@@ -157,8 +158,8 @@ class _TemplateBase(metaclass=abc.ABCMeta):
             feature.validate(targs)
 
     def instantiate(self, tinfo, targs, packagedir, use_force=False):
-        # pylint: disable=unused-argument
-        self._instantiate(targs, packagedir, use_force)
+        self._packagedir = packagedir
+        self._instantiate(targs)
         for feature in self._features:
             feature.instantiate(tinfo, targs, packagedir, use_force)
 
@@ -191,10 +192,9 @@ class _TemplateBase(metaclass=abc.ABCMeta):
                     continue
                 yield in_file, out_path, out_file, out_content
 
-    def _instantiate(self, targs, packagedir, use_force):
-        # pylint: disable=unused-argument
+    def _instantiate(self, targs):
         for orig_file, path_name, file_name, content in self._walk(targs):
-            out_dir = os.path.join(packagedir, path_name)
+            out_dir = os.path.join(self._packagedir, path_name)
             out_file = os.path.join(out_dir, file_name)
             os.makedirs(out_dir, exist_ok=True)
             try:
@@ -204,15 +204,38 @@ class _TemplateBase(metaclass=abc.ABCMeta):
             except IOError as err:
                 LOG.warning(err)
 
-    def _update_metadata(self, tinfo, targs, packagedir):
+
+class Package(_TemplateBase):
+    def instantiate(self, tinfo, targs, packagedir, use_force=False):
+        self._prepare_packagedir(packagedir, use_force)
+        super().instantiate(tinfo, targs, packagedir, use_force)
+        self._update_metadata(tinfo, targs)
+        self._git_init(tinfo)
+
+    def _prepare_packagedir(self, packagedir, use_force=False):
+        if os.path.isdir(packagedir):
+            if use_force:
+                try:
+                    delete_path(packagedir)
+                    LOG.info('Removed existing package directory %s', packagedir)
+                except OSError as err:
+                    raise OutputError('could not remove package directory {}: {}'
+                                      .format(packagedir, err)) from err
+            else:
+                raise OutputError('package directory {} already exists. Use'
+                                  ' --force to delete and recreate.'
+                                  .format(packagedir))
+        os.makedirs(packagedir, exist_ok=True)
+
+    def _update_metadata(self, tinfo, targs):
         config = configparser.ConfigParser(delimiters='=')
         config.optionxform = str
         section = 'template'
-        manifest_file = os.path.join(packagedir, METADATA_FILENAME)
+        manifest_file = os.path.join(self._packagedir, METADATA_FILENAME)
 
         if config.read(manifest_file):
-            if not config.has_section(section):
-                config.add_section(section)
+            config.remove_section(section)
+            config.add_section(section)
             config.set(section, 'source', tinfo.name())
             config.set(section, 'version', tinfo.version())
             config.set(section, 'zkg_version', __version__)
@@ -226,28 +249,27 @@ class _TemplateBase(metaclass=abc.ABCMeta):
         with open(manifest_file, 'w') as hdl:
             config.write(hdl)
 
+    def _git_init(self, tinfo):
+        """Initialize git repo and commit package content."""
+        repo = git.Repo.init(self._packagedir)
+        for fname in repo.untracked_files:
+            repo.index.add(fname)
 
-class Package(_TemplateBase):
-    def instantiate(self, tinfo, targs, packagedir, use_force=False):
-        if os.path.isdir(packagedir):
-            if use_force:
-                try:
-                    delete_path(packagedir)
-                    LOG.info('Removed existing package directory %s', packagedir)
-                except OSError as err:
-                    raise OutputError('could not remove package directory {}: {}'
-                                      .format(packagedir, err)) from err
+        features_info = ''
+        if self._features:
+            names = sorted(['"' + f.name() + '"' for f in self._features])
+            if len(names) == 1:
+                features_info = ', with feature {}'.format(names[0])
             else:
-                raise OutputError('package directory {} already exists. Use'
-                                  ' --force to delete and recreate.'
-                                  .format(packagedir))
-        else:
-            os.makedirs(packagedir, exist_ok=True)
+                features_info = ', with features '
+                features_info += ', '.join(names[:-1])
+                features_info += ' and ' + names[-1]
 
-        super().instantiate(tinfo, targs, packagedir, use_force)
+        repo.index.commit("""Initial commit.
 
-        self._update_metadata(tinfo, targs, packagedir)
-
+zkg {} created this content from template "{}"
+version {}{}.""".format(__version__, tinfo.name(),
+                          tinfo.version(), features_info))
 
 class Feature(_TemplateBase):
 
