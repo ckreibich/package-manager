@@ -3,7 +3,7 @@ import os
 import zeekpkg.template
 
 class Package(zeekpkg.template.Package):
-    def content_dir(self):
+    def contentdir(self):
         return 'package'
 
     def validate(self, args):
@@ -14,7 +14,7 @@ class Package(zeekpkg.template.Package):
 
 
 class Plugin(zeekpkg.template.Feature):
-    def content_dir(self):
+    def contentdir(self):
         return 'plugin'
 
     def validate(self, args):
@@ -29,7 +29,7 @@ class Plugin(zeekpkg.template.Feature):
 
 
 class GithubCi(zeekpkg.template.Feature):
-    def content_dir(self):
+    def contentdir(self):
         return 'github-ci'
 
 

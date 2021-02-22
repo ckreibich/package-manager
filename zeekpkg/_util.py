@@ -76,6 +76,14 @@ def find_sentence_end(s):
         beg = period_idx + 1
 
 
+def normalize_version_tag(tag):
+    # Change vX.Y.Z into X.Y.Z
+    if len(tag) > 1 and tag[0] == 'v' and tag[1].isdigit():
+        return tag[1:]
+
+    return tag
+
+
 def git_clone(git_url, dst_path, shallow=False):
     if shallow:
         try:
@@ -177,6 +185,30 @@ def git_default_branch(repo):
         return repo.head.object.hexsha
 
 
+def git_version_tags(clone):
+    tags = []
+
+    for tagref in clone.tags:
+        tag = str(tagref.name)
+        normal_tag = normalize_version_tag(tag)
+
+        try:
+            sv = semver.Version.coerce(normal_tag)
+        except ValueError:
+            # Skip tags that aren't compatible semantic versions.
+            continue
+        else:
+            tags.append((normal_tag, tag, sv))
+
+    return [t[1] for t in sorted(tags, key=lambda e: e[2])]
+
+
+def git_recursive_update(repo):
+    repo.git.pull()
+    repo.git.submodule('sync', '--recursive')
+    repo.git.submodule('update', '--recursive', '--init')
+
+
 def is_sha1(s):
     if not s:
         return False;
@@ -253,15 +285,13 @@ def slugify(name):
 
 def load_source(filename):
     """Loads the given Python script file and returns it as a module."""
-    # This is more complicated than one would think... for reference:
+    # This is more complicated than one would think... for some pointers:
     # https://stackoverflow.com/questions/67631/how-to-import-a-module-given-the-full-path
+    # We currrently require Python 3.5+, where the following seems sufficient:
     absname = os.path.abspath(filename)
     dirname = os.path.dirname(absname)
     loader = importlib.machinery.SourceFileLoader('template_' + dirname, absname)
-    if hasattr(loader, 'exec_module'):
-        mod = types.ModuleType(loader.name)
-        loader.exec_module(mod)
-    else:
-        mod = loader.load_module()
+    mod = types.ModuleType(loader.name)
+    loader.exec_module(mod)
 
     return mod

@@ -66,6 +66,9 @@ if not os.path.isdir(ZEEK_ZKG_STATE_DIR):
 # The default package source we fall back to as needed
 ZKG_DEFAULT_SOURCE = 'https://github.com/zeek/packages'
 
+# The default package template
+ZKG_DEFAULT_TEMPLATE = 'https://github.com/ckreibich/package-template'
+
 from zeekpkg._util import (
     make_dir,
     make_symlink,
@@ -248,6 +251,9 @@ def create_config(args, configfile):
     if not config.has_section('sources'):
         config.add_section('sources')
 
+    if not config.has_section('templates'):
+        config.add_section('templates')
+
     if not config.has_section('paths'):
         config.add_section('paths')
 
@@ -255,6 +261,10 @@ def create_config(args, configfile):
         default = os.getenv('ZKG_DEFAULT_SOURCE', ZKG_DEFAULT_SOURCE)
         if default:
             config.set('sources', 'zeek', default)
+
+        default = os.getenv('ZKG_DEFAULT_TEMPLATE', ZKG_DEFAULT_TEMPLATE)
+        if default:
+            config.set('templates', 'default', default)
 
     def config_option_set(config, section, option):
         return config.has_option(section, option) and config.get(section,
@@ -294,6 +304,7 @@ def create_config(args, configfile):
 
     expand_config_values(config, 'sources')
     expand_config_values(config, 'paths')
+    expand_config_values(config, 'templates')
 
     for key, value in config.items('paths'):
         if value and not os.path.isabs(value):
@@ -2014,33 +2025,45 @@ def cmd_env(manager, args, config, configfile):
         print(u'export ZEEK_PLUGIN_PATH={}'.format(':'.join(pluginpaths)))
 
 def cmd_create_preparse(args, config):
-    return zeekpkg.TemplateInfo.load(config, args.template)
-
-def cmd_create(manager, args, config, configfile):
-    tinfo = zeekpkg.TemplateInfo.load(config, args.template)
-    targs = zeekpkg.TemplateArgs(tinfo)
-    tinfo.argparse_process(args, targs)
-
-    tmpl = tinfo.get_package()
-
-    # Overlay any requested features:
-    if args.features:
-        for feature in tinfo.get_features():
-            if feature.name() in args.features:
-                tmpl.add_feature(feature)
-
-    # Verify that input paramaters are acceptable for template instantiation
     try:
-        tmpl.validate(targs)
-    except zeekpkg.template.InputError as err:
-        print_error('error: template input invalid, ' + str(err))
+        template = args.template or config.get(
+            'templates', 'default', fallback=ZKG_DEFAULT_TEMPLATE)
+        return zeekpkg.TemplateInfo.load(config, template, args.version)
+    except zeekpkg.template.LoadError as error:
+        print_error('error: could not retrieve template "{}": {}'.format(
+            template, error))
         sys.exit(1)
 
-    # Make it so!
+
+def cmd_create(manager, args, config, configfile):
     try:
-        tmpl.instantiate(tinfo, targs, args.packagedir, args.force)
-    except zeekpkg.template.OutputError as err:
-        print_error('error: template instantiation failed, ' + str(err))
+        tinfo = args.preparse_state
+        targs = zeekpkg.TemplateArgs()
+        tinfo.argparse_process(args, targs)
+        package = tinfo.get_package()
+
+        # Overlay any requested features:
+        if args.features:
+            for feature in tinfo.get_features():
+                if feature.name() in args.features:
+                    package.add_feature(feature)
+
+        # Verify input paramaters for template instantiation
+        try:
+            package.do_validate(targs)
+        except zeekpkg.template.InputError as err:
+            print_error('error: template input invalid, ' + str(err))
+            sys.exit(1)
+
+        try:
+            package.do_instantiate(tinfo, targs, args.packagedir, args.force)
+        except zeekpkg.template.OutputError as err:
+            print_error('error: template instantiation failed, ' + str(err))
+            sys.exit(1)
+    except Exception as error:
+        msg = 'problem during template instantiation: {}'.format(error)
+        zeekpkg.LOG.exception(msg)
+        print_error('error: ' + msg)
         sys.exit(1)
 
 
@@ -2067,8 +2090,10 @@ def top_level_parser(is_preparse):
         '    ``ZKG_CONFIG_FILE``:\t'
         'Same as ``--configfile`` option, but has less precedence.\n'
         '    ``ZKG_DEFAULT_SOURCE``:\t'
-        'The default package source to use (normally {}).'
-        .format(ZKG_DEFAULT_SOURCE)
+        'The default package source to use (normally {}).\n'
+        '    ``ZKG_DEFAULT_TEMPLATE``:\t'
+        'The default package template to use (normally {}).'
+        .format(ZKG_DEFAULT_SOURCE, ZKG_DEFAULT_TEMPLATE)
     )
     top_parser.add_argument('--version', action='version',
                             version='%(prog)s ' + zeekpkg.__version__)
@@ -2084,7 +2109,7 @@ def top_level_parser(is_preparse):
                             ' Use multiple times for more output (e.g. -vvv).')
     top_parser.add_argument('--extra-source', action='append',
                             metavar='NAME=URL', help='Add an extra source.')
-    top_parser.set_defaults(preparse_cmd=None)
+    top_parser.set_defaults(preparse_cmd=None, preparse_state=None)
     return top_parser
 
 
@@ -2510,10 +2535,16 @@ def argparser(is_preparse, preparse_state=None):
     sub_parser.set_defaults(run_cmd=cmd_env)
 
     # create
-    tinfo = preparse_state
-    tname = tinfo.name() if tinfo else None
-    tdescr = ' from template "{}"'.format(tname) if tname else ''
-    feature_choices = None if tinfo is None else sorted([f.name() for f in tinfo.get_features()])
+    try:
+        tinfo = preparse_state
+        tname = tinfo.name() if tinfo else None
+        tdescr = ' from template "{}"'.format(tname) if tname else ''
+        feature_choices = None if tinfo is None else sorted([f.name() for f in tinfo.get_features()])
+    except Exception as error:
+        msg = 'failed to load template: {}'.format(error)
+        zeekpkg.LOG.exception(msg)
+        print_error('error: ' + msg)
+        sys.exit(1)
 
     sub_parser = command_parser.add_parser(
         'create', add_help=not is_preparse,
@@ -2522,13 +2553,22 @@ def argparser(is_preparse, preparse_state=None):
         ' provided via --packagedir. If this directory exists zkg will not'
         ' modify it. Use --force to allow zkg to delete and recreate it.'.format(tdescr),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    sub_parser.set_defaults(run_cmd=cmd_create, preparse_cmd=cmd_create_preparse)
+    sub_parser.set_defaults(
+        run_cmd=cmd_create, preparse_cmd=cmd_create_preparse, preparse_state=preparse_state)
     sub_parser.add_argument(
         '--packagedir', metavar='DIR', required=not is_preparse,
         help='Output directory into which to produce the new package.')
     sub_parser.add_argument(
         '--force', action='store_true',
         help='If the package output directory exists, remove and re-create it.')
+    sub_parser.add_argument(
+        '--version',
+        help='The version of the package to install.  A version tag, branch'
+        ' name, or commit hash may be specified here.  If --template refers'
+        ' to a local git repo with a working tree, then its currently active'
+        ' branch is used.  The default for other cases is to use the latest'
+        ' version tag, or if a template has none, the default branch, like'
+        ' "main" or "master".')
     sub_parser.add_argument(
         '--features', nargs='+', choices=feature_choices,
         help='Additional features to include in your package.')
@@ -2537,8 +2577,14 @@ def argparser(is_preparse, preparse_state=None):
         help='By default, zkg uses its own package template. Use this to'
         ' select an alternative one.')
 
-    if tinfo:
-        tinfo.argparse_setup(sub_parser)
+    try:
+        if tinfo:
+            tinfo.argparse_setup(sub_parser)
+    except Exception as error:
+        msg = 'failed to load template: {}'.format(error)
+        zeekpkg.LOG.exception(msg)
+        print_error('error: ' + msg)
+        sys.exit(1)
 
     return top_parser
 

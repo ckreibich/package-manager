@@ -3,14 +3,6 @@ from setuptools import setup
 
 install_requires = ['gitpython', 'semantic_version', 'btest']
 
-def package_data(package):
-    res = []
-    for root, _, files in os.walk(
-            package + os.sep + 'default_template', followlinks=True):
-        for f in files:
-            res.append(root[len(package)+1:] + os.sep + f)
-    return {package: res}
-
 setup(
     name='zkg',
     version=open('VERSION').read().replace('-', '.dev', 1).strip(),
@@ -23,7 +15,6 @@ setup(
     url='https://github.com/zeek/package-manager',
     scripts=['zkg'],
     packages=['zeekpkg'],
-    package_data=package_data('zeekpkg'),
     install_requires=install_requires,
     classifiers=[
         'Development Status :: 5 - Production/Stable',
