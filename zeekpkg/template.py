@@ -83,7 +83,7 @@ class TemplateInfo(metaclass=abc.ABCMeta):
                 repo = git.Repo(template)
                 if not repo.is_dirty():
                     version = repo.head.ref.commit.hexsha[:8]
-            except git.InvalidGitRepositoryError:
+            except git.exc.InvalidGitRepositoryError:
                 pass
             templatedir = template
         else:
