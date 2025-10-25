@@ -68,8 +68,15 @@ from zeekpkg.config import (
     CONFIG,
 )
 from zeekpkg.consts import (
+    VERSION,
     ZKG_DEFAULT_SOURCE,
     ZKG_DEFAULT_TEMPLATE,
+)
+from zeekpkg.logs import (
+    LOG,
+)
+from zeekpkg.manager import (
+    Manager,
 )
 from zeekpkg.package import (
     BUILTIN_SCHEME,
@@ -90,7 +97,7 @@ from zeekpkg.uservar import (
 
 
 def prompt_for_user_vars(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
     pkg_infos: list[PackageInfo],
 ) -> None:
@@ -192,7 +199,7 @@ def check_local_git_repo(git_url: str) -> bool:
 
 
 def get_changed_state(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     saved_state: dict[str, bool],
     pkg_lst: list[str],
 ) -> str:
@@ -228,7 +235,7 @@ def get_changed_state(
 class InstallWorker(threading.Thread):
     def __init__(
         self,
-        manager: zeekpkg.Manager,
+        manager: Manager,
         package_name: str,
         package_version: str,
     ) -> None:
@@ -284,7 +291,7 @@ class InstallWorker(threading.Thread):
 
 
 def cmd_test(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     if args.version and len(args.package) > 1:
@@ -353,7 +360,7 @@ def cmd_test(
 
 
 def cmd_install(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     if args.version and len(args.package) > 1:
@@ -475,7 +482,7 @@ def cmd_install(
             name = info.package.qualified_name()
 
             if "test_command" not in info.metadata:
-                zeekpkg.LOG.info(
+                LOG.info(
                     f'Skipping unit tests for "{name}": no test_command in metadata',
                 )
                 continue
@@ -618,7 +625,7 @@ def cmd_install(
 
 
 def cmd_bundle(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     packages_to_bundle = []
@@ -746,7 +753,7 @@ def cmd_bundle(
 
 
 def cmd_unbundle(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     prev_load_status = {}
@@ -869,7 +876,7 @@ def cmd_unbundle(
 
 
 def cmd_remove(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     packages_to_remove: list[InstalledPackage] = []
@@ -964,7 +971,7 @@ def cmd_remove(
 
 
 def cmd_purge(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     packages_to_remove = manager.installed_packages()
@@ -1011,7 +1018,7 @@ def cmd_purge(
         sys.exit(1)
 
 
-def outdated(manager: zeekpkg.Manager) -> list[str]:
+def outdated(manager: Manager) -> list[str]:
     return [
         ipkg.package.qualified_name()
         for ipkg in manager.installed_packages()
@@ -1020,7 +1027,7 @@ def outdated(manager: zeekpkg.Manager) -> list[str]:
 
 
 def cmd_refresh(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     if args.fail_on_aggregate_problems and not args.aggregate:
@@ -1116,7 +1123,7 @@ def cmd_refresh(
 
 
 def version_change_string(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     installed_package: InstalledPackage,
 ) -> str:
     old_version = installed_package.status.current_version
@@ -1137,7 +1144,7 @@ def version_change_string(
 
 
 def cmd_upgrade(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     if args.package:
@@ -1272,7 +1279,7 @@ def cmd_upgrade(
                 sys.exit(1)
 
             if "test_command" not in next_info.metadata:
-                zeekpkg.LOG.info(
+                LOG.info(
                     'Skipping unit tests for "%s": no test_command in metadata',
                     name,
                 )
@@ -1383,7 +1390,7 @@ def cmd_upgrade(
 
 
 def cmd_load(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     had_failure = False
@@ -1451,7 +1458,7 @@ def cmd_load(
 
 
 def cmd_unload(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     had_failure = False
@@ -1537,7 +1544,7 @@ def cmd_unload(
 
 
 def cmd_pin(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     had_failure = False
@@ -1571,7 +1578,7 @@ def cmd_pin(
 
 
 def cmd_unpin(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     had_failure = False
@@ -1605,7 +1612,7 @@ def cmd_unpin(
 
 
 def _get_filtered_packages(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     category: str,
 ) -> (
     dict[str, Package]
@@ -1629,32 +1636,31 @@ def _get_filtered_packages(
         filtered_pkgs = {
             key: value
             for key, value in pkg_dict.items()
-            if isinstance(value, zeekpkg.InstalledPackage)
+            if isinstance(value, InstalledPackage)
         }
     elif category == "not_installed":
         filtered_pkgs = {
             key: value
             for key, value in pkg_dict.items()
-            if not isinstance(value, zeekpkg.InstalledPackage)
+            if not isinstance(value, InstalledPackage)
         }
     elif category == "loaded":
         filtered_pkgs = {
             key: value
             for key, value in pkg_dict.items()
-            if isinstance(value, zeekpkg.InstalledPackage) and value.status.is_loaded
+            if isinstance(value, InstalledPackage) and value.status.is_loaded
         }
     elif category == "unloaded":
         filtered_pkgs = {
             key: value
             for key, value in pkg_dict.items()
-            if isinstance(value, zeekpkg.InstalledPackage)
-            and not value.status.is_loaded
+            if isinstance(value, InstalledPackage) and not value.status.is_loaded
         }
     elif category == "outdated":
         filtered_pkgs = {
             key: value
             for key, value in pkg_dict.items()
-            if isinstance(value, zeekpkg.InstalledPackage) and value.status.is_outdated
+            if isinstance(value, InstalledPackage) and value.status.is_outdated
         }
     else:
         raise NotImplementedError
@@ -1663,13 +1669,13 @@ def _get_filtered_packages(
 
 
 def cmd_list(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     filtered_pkgs = _get_filtered_packages(manager, args.category)
 
     for pkg_name, val in sorted(filtered_pkgs.items()):
-        if isinstance(val, zeekpkg.InstalledPackage):
+        if isinstance(val, InstalledPackage):
             pkg = val.package
 
             if val.is_builtin() and not args.include_builtin:
@@ -1690,7 +1696,7 @@ def cmd_list(
 
 
 def cmd_search(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     src_pkgs = manager.source_packages()
@@ -1743,7 +1749,7 @@ def cmd_search(
 
 
 def cmd_info(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     if args.version and len(args.package) > 1:
@@ -1899,7 +1905,7 @@ def _fill_metadata_version(
 
 
 def cmd_config(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     if args.config_param == "all":
@@ -1918,7 +1924,7 @@ def cmd_config(
 
 
 def cmd_autoconfig(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     if args.user:
@@ -1974,7 +1980,7 @@ def cmd_autoconfig(
 
 
 def cmd_env(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     zeek_config = find_program("zeek-config")
@@ -2023,7 +2029,7 @@ def cmd_env(
 
 
 def cmd_create(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     tmplname = (
@@ -2035,7 +2041,7 @@ def cmd_create(
         tmpl = Template.load(tmplname, args.version)
     except LoadError as error:
         msg = f"problem while loading template {tmplname}: {error}"
-        zeekpkg.LOG.exception(msg)
+        LOG.exception(msg)
         print_error("error: " + msg)
         sys.exit(1)
 
@@ -2106,7 +2112,7 @@ def cmd_create(
                         sys.exit(1)
                 try:
                     delete_path(args.packagedir)
-                    zeekpkg.LOG.info(
+                    LOG.info(
                         "Removed existing package directory %s",
                         args.packagedir,
                     )
@@ -2122,13 +2128,13 @@ def cmd_create(
             sys.exit(1)
     except Exception as error:
         msg = f"problem during template instantiation: {error}"
-        zeekpkg.LOG.exception(msg)
+        LOG.exception(msg)
         print_error("error: " + msg)
         sys.exit(1)
 
 
 def cmd_template_info(
-    manager: zeekpkg.Manager,
+    manager: Manager,
     args: argparse.Namespace,
 ) -> None:
     tmplname = (
@@ -2141,7 +2147,7 @@ def cmd_template_info(
         tmpl = Template.load(tmplname, args.version)
     except LoadError as error:
         msg = f"problem while loading template {tmplname}: {error}"
-        zeekpkg.LOG.exception(msg)
+        LOG.exception(msg)
         print_error("error: " + msg)
         sys.exit(1)
 
@@ -2195,7 +2201,7 @@ def top_level_parser() -> argparse.ArgumentParser:
     top_parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s " + zeekpkg.__version__,
+        version="%(prog)s " + VERSION,
     )
 
     group = top_parser.add_mutually_exclusive_group()
@@ -2871,11 +2877,11 @@ def main() -> None:
     handler.setFormatter(formatter)
 
     if args.verbose == 1:
-        zeekpkg.LOG.setLevel(logging.INFO)
+        LOG.setLevel(logging.INFO)
     elif args.verbose >= 2:
-        zeekpkg.LOG.setLevel(logging.DEBUG)
+        LOG.setLevel(logging.DEBUG)
 
-    zeekpkg.LOG.addHandler(handler)
+    LOG.addHandler(handler)
 
     configfile = CONFIG.find_configfile(args)
 
@@ -2883,7 +2889,7 @@ def main() -> None:
     CONFIG.update_from_file(configfile)
     CONFIG.update_from_args(args)
 
-    manager = zeekpkg.Manager()
+    manager = Manager()
 
     for name, url in CONFIG.items("sources"):
         if err := manager.add_source(name, url):

@@ -8,24 +8,11 @@ import os
 import re
 import shutil
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import git
 import semantic_version as semver
 
-if TYPE_CHECKING:
-    from zeekpkg import UserVar
-
-from zeekpkg.config import (
-    CONFIG,
-)
-
-from .consts import (
-    VERSION,
-)
-from .logs import (
-    LOG,
-)
 from ._util import (
     delete_path,
     git_checkout,
@@ -37,10 +24,20 @@ from ._util import (
     load_source,
     make_dir,
 )
+from .config import (
+    CONFIG,
+)
+from .consts import (
+    VERSION,
+)
+from .logs import (
+    LOG,
+)
 from .package import (
     METADATA_FILENAME,
     name_from_path,
 )
+from .uservar import UserVar
 
 API_VERSION = "1.1.0"
 
