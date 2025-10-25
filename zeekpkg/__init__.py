@@ -8,6 +8,7 @@ may be added in order to help log/debug applications.
 """
 
 from . import (
+    cli,
     config,
     consts,
     logs,
@@ -18,6 +19,9 @@ from . import (
 )
 
 __all__ = [
+    "CONFIG",
+    "LOG",
+    "cli",
     "config",
     "consts",
     "logs",
@@ -27,4 +31,8 @@ __all__ = [
     "template",
     "uservar",
 ]
+
 __version__ = consts.VERSION
+
+from .config import CONFIG
+from .logs import LOG
