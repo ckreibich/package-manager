@@ -11,12 +11,12 @@ try:
     import semantic_version  # noqa: F401
 except ImportError as error:
     print(
-        "error: zkg failed to import one or more dependencies:\n"
+        "zkg failed to import one or more required dependencies:\n"
         "\n"
         "* GitPython:        https://pypi.org/project/GitPython\n"
         "* semantic-version: https://pypi.org/project/semantic-version\n"
         "\n"
-        "If you use 'pip', they can be installed like:\n"
+        "If you use 'pip', install them as follows:\n"
         "\n"
         "     pip3 install GitPython semantic-version\n"
         "\n"

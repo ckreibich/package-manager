@@ -15,12 +15,14 @@ from . import (
     manager,
     package,
     source,
+    ui,
     uservar,
 )
 
 __all__ = [
     "CONFIG",
     "LOG",
+    "UI",
     "cli",
     "config",
     "consts",
@@ -29,6 +31,7 @@ __all__ = [
     "package",
     "source",
     "template",
+    "ui",
     "uservar",
 ]
 
@@ -36,3 +39,4 @@ __version__ = consts.VERSION
 
 from .config import CONFIG
 from .logs import LOG
+from .ui import UI
