@@ -1,4 +1,6 @@
 import abc
+import argparse
+import re
 import sys
 import threading
 from collections.abc import Callable
@@ -105,9 +107,105 @@ class Worker(threading.Thread):
             out.flush()
 
 
+class Markup:
+    """A markup instance groups rules of content substitions.
+
+    These content substitutions will usually apply color markup but can also
+    contain other transformations.
+    """
+
+    class Rule:
+        """A Rule instance captures a single content-rewriting rule."""
+
+        def __init__(
+            self,
+            open_in: str,
+            open_out: str,
+            close_in: str | None = "",
+            close_out: str | None = "",
+        ) -> None:
+            """Rule constructor.
+
+            Each rule knows how to translate a pair of opening and closing tags.
+            For example, "[zkg.pkg]" and "[/zkg.pkg]" can be translated
+            specifically via such a rule.  The closing-tag substitution is
+            optional and skipped if passed in as None.
+
+            When the input/output closing tags are the empty string, and the
+            opening tags are rich-style tags of the form "[...]", the
+            constructor infers the closing tags from the opening ones.
+            """
+            self.open_in = open_in
+            self.open_out = open_out
+            self.close_in = close_in
+            self.close_out = close_out
+
+            # None means closing tags don't apply to this rule.
+            if self.close_in is None:
+                return
+            if self.close_out is None:
+                self.close_out = ""
+
+            # If the user gave no explicit closing tag, infer it from
+            # the input tag: <foo> -> </foo>.
+            if not self.close_in:
+                self.close_in = self.open_in.replace("[zkg", "[/zkg", 1)
+            if self.open_out.startswith("[") and not self.close_out:
+                self.close_out = self.open_out.replace("[", "[/", 1)
+
+        def apply(self, s: str) -> str:
+            """Applies this rule to the given input string and returns the result."""
+            return s.replace(self.open_in, self.open_out).replace(
+                str(self.close_in or ""),
+                str(self.close_out or ""),
+            )
+
+    def __init__(self) -> None:
+        self.rules: list[Markup.Rule] = []
+
+    def add_rule(self, rule: Rule) -> None:
+        self.rules.append(rule)
+
+    def apply(self, s: str) -> str:
+        """Applies all rules to the input string, in order, and returns the result."""
+        res = s
+        for rule in self.rules:
+            res = rule.apply(res)
+        return res
+
+
+class PlaintextMarkup(Markup):
+    """Basic plaintext markup, mostly discarding it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.regex = re.compile(r"\[ */? *zkg\..+?\]")
+
+    def apply(self, s: str) -> str:
+        res = super().apply(s)
+        # Strip out any of our remaining markup tags.
+        return re.sub(self.regex, "", res)
+
+
+class ColorMarkup(Markup):
+    """Default color markup of [zkg.*] / [/zkg.*] markup tags."""
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.add_rule(Markup.Rule("[zkg.pkg]", "[blue1]"))
+        self.add_rule(Markup.Rule("[zkg.src]", "[blue1]"))
+        self.add_rule(Markup.Rule("[zkg.ver]", "[green]"))
+        self.add_rule(Markup.Rule("[zkg.debug]", "[grey66]"))
+        self.add_rule(Markup.Rule("[zkg.verbose]", "[grey66]"))
+        self.add_rule(Markup.Rule("[zkg.warn]", "[dark_orange]"))
+        self.add_rule(Markup.Rule("[zkg.err]", "[red3]"))
+
+
 class UserInterface(abc.ABC):
     def __init__(self, verbosity: int = 0) -> None:
         self.verbosity = verbosity
+        self.markup: Markup = PlaintextMarkup()
 
     @abc.abstractmethod
     def debug(
@@ -223,6 +321,17 @@ class UserInterface(abc.ABC):
         print("Abort.")
         return False
 
+    def _markup(self, s: str) -> str:
+        """Helper to apply markup to a given string."""
+        return self.markup.apply(s)
+
+    def _markup_list(self, ss: tuple[str, ...]) -> tuple[str, ...]:
+        """Helper to apply markup to a given list of strings."""
+        res: list[str] = []
+        for s in ss:
+            res.append(self.markup.apply(s))
+        return tuple(res)
+
 
 class PlainUI(UserInterface):
     """A basic plaintext UI, suitable for the console or redirection to files."""
@@ -232,7 +341,7 @@ class PlainUI(UserInterface):
         verbosity: int = 0,
         stdout: TextIO = sys.stdout,
         stderr: TextIO = sys.stderr,
-    ):
+    ) -> None:
         super().__init__(verbosity=verbosity)
         self.stdout = stdout
         self.stderr = stderr
@@ -247,6 +356,7 @@ class PlainUI(UserInterface):
     ) -> None:
         _ = prefix
         if self.verbosity >= 2:
+            msgs = self._markup_list(msgs)
             print(*msgs, sep=sep, end=end, file=self.stdout, flush=flush)
 
     def verbose(
@@ -259,6 +369,7 @@ class PlainUI(UserInterface):
     ) -> None:
         _ = prefix
         if self.verbosity >= 1:
+            msgs = self._markup_list(msgs)
             print(*msgs, sep=sep, end=end, file=self.stdout, flush=flush)
 
     def info(
@@ -269,6 +380,7 @@ class PlainUI(UserInterface):
         end: str = "\n",
         flush: bool = False,
     ) -> None:
+        msgs = self._markup_list(msgs)
         print(*msgs, sep=sep, end=end, file=self.stdout, flush=flush)
 
     def warning(
@@ -279,6 +391,8 @@ class PlainUI(UserInterface):
         end: str = "\n",
         flush: bool = False,
     ) -> None:
+        prefix = self._markup(prefix)
+        msgs = self._markup_list(msgs)
         if prefix:
             print(prefix, *msgs, sep=sep, end=end, file=self.stderr, flush=flush)
         else:
@@ -292,6 +406,8 @@ class PlainUI(UserInterface):
         end: str = "\n",
         flush: bool = False,
     ) -> None:
+        prefix = self._markup(prefix)
+        msgs = self._markup_list(msgs)
         if prefix:
             print(prefix, *msgs, sep=sep, end=end, file=self.stderr, flush=flush)
         else:
@@ -313,7 +429,7 @@ class PlainUI(UserInterface):
     def progress_activity(self, act: ProgressActivity) -> str:
         worker = Worker(act)
         worker.start()
-        worker.wait()
+        worker.wait(self.stdout)
         return act.error
 
 
@@ -330,6 +446,140 @@ class UIProxy:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.impl, name)
+
+
+try:
+    import rich.console  # type: ignore
+
+    class RichUI(UserInterface):
+        def __init__(
+            self,
+            verbosity: int = 0,
+            stdout: TextIO = sys.stdout,
+            stderr: TextIO = sys.stderr,
+        ):
+            super().__init__()
+            self.verbosity = verbosity
+            # Don't use built-in highlighting (of numbers, strings, etc)
+            # in our rich consoles. This does not affect our explicit
+            # coloring of warnings, packages, etc.
+            self.outcon = rich.console.Console(file=stdout, highlight=False)
+            self.errcon = rich.console.Console(file=stderr, highlight=False)
+            self.markup = ColorMarkup()
+
+        def debug(
+            self,
+            *msgs: str,
+            prefix: str = "",
+            sep: str = " ",
+            end: str = "\n",
+            flush: bool = False,
+        ) -> None:
+            _ = flush  # ignore flush, rich always flushes
+            if self.verbosity >= 2:
+                msgs = self._markup_list(msgs)
+                self.outcon.print(
+                    "[zkg.debug]",
+                    *msgs,
+                    "[/zkg.debug]",
+                    sep=sep,
+                    end=end,
+                )
+
+        def verbose(
+            self,
+            *msgs: str,
+            prefix: str = "",
+            sep: str = " ",
+            end: str = "\n",
+            flush: bool = False,
+        ) -> None:
+            _ = flush  # ignore flush, rich always flushes
+            if self.verbosity >= 1:
+                msgs = self._markup_list(msgs)
+                self.outcon.print(
+                    "[zkg.verbose]",
+                    *msgs,
+                    "[/zkg.verbose]",
+                    sep=sep,
+                    end=end,
+                )
+
+        def info(
+            self,
+            *msgs: str,
+            prefix: str = "",
+            sep: str = " ",
+            end: str = "\n",
+            flush: bool = False,
+        ) -> None:
+            _ = flush  # ignore flush, rich always flushes
+            msgs = self._markup_list(msgs)
+            self.outcon.print(*msgs, sep=sep, end=end)
+
+        def warning(
+            self,
+            *msgs: str,
+            prefix: str = "[zkg.warn]Warning[/zkg.warn]:",
+            sep: str = " ",
+            end: str = "\n",
+            flush: bool = False,
+        ) -> None:
+            _ = flush  # ignore flush, rich always flushes
+            prefix = self._markup(prefix)
+            msgs = self._markup_list(msgs)
+            if prefix:
+                self.errcon.print(prefix, *msgs, sep=sep, end=end)
+            else:
+                self.errcon.print(*msgs, sep=sep, end=end)
+
+        def error(
+            self,
+            *msgs: str,
+            prefix: str = "[zkg.err]Error[/zkg.err]:",
+            sep: str = " ",
+            end: str = "\n",
+            flush: bool = False,
+        ) -> None:
+            _ = flush  # ignore flush, rich always flushes
+            prefix = self._markup(prefix)
+            msgs = self._markup_list(msgs)
+            if prefix:
+                self.errcon.print(prefix, *msgs, sep=sep, end=end)
+            else:
+                self.errcon.print(*msgs, sep=sep, end=end)
+
+        def activity(self, act: Activity) -> str:
+            worker = Worker(act)
+            worker.start()
+            worker.wait()
+            return act.error
+
+        def call_activity(self, call: UiCallable) -> str:
+            act = CallableActivity(call)
+            worker = Worker(act)
+            worker.start()
+            worker.wait()
+            return act.error
+
+        def progress_activity(self, act: ProgressActivity) -> str:
+            worker = Worker(act)
+            worker.start()
+            worker.wait()
+            return act.error
+
+except ImportError:
+    # Alias the UI back to the plaintext one if we don't have rich.
+    RichUI: type[UserInterface] = PlainUI  # type: ignore[no-redef]
+
+
+def configure(args: argparse.Namespace) -> None:
+    """Establish the UI as per the user's preferences and terminal capability."""
+    if sys.stdout.isatty():
+        UI.impl = RichUI(verbosity=args.verbose)
+        return
+
+    UI.impl = PlainUI(verbosity=args.verbose)
 
 
 UI: UIProxy = UIProxy()

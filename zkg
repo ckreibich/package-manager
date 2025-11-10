@@ -50,6 +50,7 @@ def main() -> None:
     parser = zeekpkg.cli.argparser()
     args = parser.parse_args()
 
+    zeekpkg.ui.configure(args)
     zeekpkg.logs.configure(args.verbose)
 
     configfile = zeekpkg.CONFIG.find_configfile(args)
