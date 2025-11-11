@@ -68,7 +68,7 @@ def prompt_for_user_vars(
         requested_user_vars = info.user_vars()
 
         if requested_user_vars is None:
-            UI.error(f'malformed user_vars in "{name}"')
+            UI.error(f"malformed user_vars in [zkg.pkg]{name}[/zkg.pkg]")
             sys.exit(1)
 
         for uvar in requested_user_vars:
@@ -149,14 +149,18 @@ def cmd_test(
         # to run tests due to the potential of conflicts.
         bpkg_info = manager.find_builtin_package(name)
         if bpkg_info is not None:
-            UI.warning(f'cannot run tests for "{name}": built-in package')
+            UI.warning(
+                f"cannot run tests for [zkg.pkg]{name}[/zkg.pkg]: built-in package",
+            )
             sys.exit(1)
 
         version = args.version if args.version else active_git_branch(name)
         package_info = manager.info(name, version=version, prefer_installed=False)
 
         if package_info.invalid_reason:
-            UI.error(f'invalid package "{name}": {package_info.invalid_reason}')
+            UI.error(
+                f"invalid package [zkg.pkg]{name}[/zkg.pkg]: {package_info.invalid_reason}",
+            )
             sys.exit(1)
 
         if not version:
@@ -170,7 +174,9 @@ def cmd_test(
         name = info.package.qualified_name()
 
         if "test_command" not in info.metadata:
-            UI.info(f"{name}: no test_command found in metadata, skipping")
+            UI.info(
+                f"[zkg.pkg]{name}[/zkg.pkg]: no test_command found in metadata, skipping",
+            )
             continue
 
         error_msg, passed, test_dir = manager.test(
@@ -181,15 +187,17 @@ def cmd_test(
 
         if error_msg:
             all_passed = False
-            UI.error(f'failed to run tests for "{name}": {error_msg}')
+            UI.error(
+                f"failed to run tests for [zkg.pkg]{name}[/zkg.pkg]: {error_msg}",
+            )
             continue
 
         if passed:
-            UI.info(f"{name}: all tests passed")
+            UI.info(f"[zkg.pkg]{name}[/zkg.pkg]: all tests passed")
         else:
             all_passed = False
             UI.error(
-                f'error: package "{name}" tests failed, inspect'
+                f"error: package [zkg.pkg]{name}[/zkg.pkg] tests failed, inspect"
                 f" {manager.package_test_log(info.package.name)} and"
                 f" the contents of {test_dir}",
             )
@@ -217,14 +225,16 @@ def cmd_install(
         # Outright prevent installing a package that Zeek has built-in.
         bpkg_info = manager.find_builtin_package(name)
         if bpkg_info is not None:
-            UI.warning(f'cannot install "{name}": built-in package')
+            UI.warning(f"cannot install [zkg.pkg]{name}[/zkg.pkg]: built-in package")
             sys.exit(1)
 
         version = args.version if args.version else active_git_branch(name)
         package_info = manager.info(name, version=version, prefer_installed=False)
 
         if package_info.invalid_reason:
-            UI.error(f'invalid package "{name}": {package_info.invalid_reason}')
+            UI.error(
+                f"invalid package [zkg.pkg]{name}[/zkg.pkg]: {package_info.invalid_reason}",
+            )
             sys.exit(1)
 
         if not version:
@@ -257,7 +267,9 @@ def cmd_install(
 
         for info, version, _ in sorted(package_infos, key=lambda x: x[0].package.name):
             name = info.package.qualified_name()
-            package_listing += f"  {name} ({version})\n"
+            package_listing += (
+                f"  [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version}[/zkg.ver])\n"
+            )
 
         UI.info("The following packages will be INSTALLED:")
         UI.info(package_listing)
@@ -270,7 +282,9 @@ def cmd_install(
                 key=lambda x: x[0].package.name,
             ):
                 name = info.package.qualified_name()
-                dependency_listing += f"  {name} ({version})"
+                dependency_listing += (
+                    f"  [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version}[zkg.ver])"
+                )
 
                 if suggested:
                     dependency_listing += " (suggested)"
@@ -288,11 +302,11 @@ def cmd_install(
             extdeps = info.dependencies(field="external_depends")
 
             if extdeps is None:
-                extdep_listing += f"  from {name} ({version}):\n    <malformed>\n"
+                extdep_listing += f"  from [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version}[/zkg.ver]):\n    <malformed>\n"
                 continue
 
             if extdeps:
-                extdep_listing += f"  from {name} ({version}):\n"
+                extdep_listing += f"  from [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version}[/zkg.ver]):\n"
 
                 for extdep, semver in sorted(extdeps.items()):
                     extdep_listing += f"    {extdep} {semver}\n"
@@ -331,7 +345,7 @@ def cmd_install(
                 )
                 continue
 
-            UI.info(f'Running unit tests for "{name}"')
+            UI.info(f"Testing [zkg.pkg]{name}[/zkg.pkg]")
             error_msg = ""
             # For testing we always process dependencies, since the tests might
             # well fail without them. If the user wants --nodeps and the tests
@@ -342,10 +356,12 @@ def cmd_install(
                 test_dependencies=True,
             )
             if error:
-                error_msg = f"failed to run tests for {name}: {error}"
+                error_msg = (
+                    f"failed to run tests for [zkg.pkg]{name}[/zkg.pkg]: {error}"
+                )
             elif not passed:
                 error_msg = (
-                    f'"{name}" tests failed, inspect'
+                    f"[zkg.pkg]{name}[/zkg.pkg] tests failed, inspect"
                     f" {manager.package_test_log(info.package.name)} and"
                     f" the contents of {test_dir}"
                 )
@@ -382,17 +398,19 @@ def cmd_install(
             backup_files = manager.backup_modified_files(name, modifications)
             prev_upstream_config_files = manager.save_temporary_config_files(ipkg)
 
-        UI.info(f'Installing "{name}"', flush=True)
+        UI.info(f"Installing [zkg.pkg]{name}[/zkg.pkg]", flush=True)
         # Use default arguments here to avoid late-binding closure:
         err = UI.call_activity(lambda n=name, v=version: manager.install(n, v))
 
         if err:
-            UI.info(f'Failed installing "{name}": {err}')
+            UI.info(f"Failed to install [zkg.pkg]{name}[/zkg.pkg]: {err}")
             installs_failed.append((name, version))
             continue
 
         ipkg = manager.find_installed_package(name)
-        UI.info(f'Installed "{name}" ({ipkg.status.current_version if ipkg else ""})')
+        UI.info(
+            f"Installed [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{ipkg.status.current_version if ipkg else ''}[/zkg.ver])",
+        )
 
         if is_overwriting:
             for i, mf in enumerate(modifications):
@@ -421,9 +439,9 @@ def cmd_install(
             load_error = manager.load(name)
 
             if load_error:
-                UI.info(f'Failed loading "{name}": {load_error}')
+                UI.info(f"Failed loading [zkg.pkg]{name}[/zkg.pkg]: {load_error}")
             else:
-                UI.info(f'Loaded "{name}"')
+                UI.info(f"Loaded [zkg.pkg]{name}[/zkg.pkg]")
 
     if not args.nodeps:
         # Now load runtime dependencies after all dependencies and suggested
@@ -453,7 +471,7 @@ def cmd_install(
             else:
                 UI.info(
                     "The following installed packages could NOT be loaded "
-                    f'to satisfy runtime dependencies for "{name}"',
+                    f"to satisfy runtime dependencies for [zkg.pkg]{name}[/zkg.pkg]",
                 )
                 UI.info(_listing)
                 manager.restore_loaded_package_states(saved_state)
@@ -464,7 +482,7 @@ def cmd_install(
         )
 
         for n, v in installs_failed:
-            UI.error(f"  {n} ({v})", prefix="")
+            UI.error(f"  [zkg.pkg]{n}[/zkg.pkg] ([zkg.ver]{v}[/zkg.ver])", prefix="")
 
         sys.exit(1)
 
@@ -504,7 +522,9 @@ def cmd_bundle(
             info = manager.info(name, version=version, prefer_installed=False)
 
             if info.invalid_reason:
-                UI.error(f'invalid package "{name}": {info.invalid_reason}')
+                UI.error(
+                    f"invalid package [zkg.pkg]{name}[/zkg.pkg]: {info.invalid_reason}",
+                )
                 sys.exit(1)
 
             if not version:
@@ -565,7 +585,9 @@ def cmd_bundle(
         package_listing = ""
 
         for name, git_url, version, is_dependency, is_suggestion in packages_to_bundle:
-            package_listing += f"  {name} ({version})"
+            package_listing += (
+                f"  [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version}[/zkg.ver])"
+            )
 
             if is_suggestion:
                 package_listing += " (suggested)"
@@ -634,7 +656,7 @@ def cmd_unbundle(
             name = git_url
 
             if info.is_builtin():
-                builtin_listing += f"  from {name} ({version}):\n"
+                builtin_listing += f"  from [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version}[/zkg.ver]):\n"
                 continue
 
             for pkg in manager.source_packages():
@@ -642,7 +664,9 @@ def cmd_unbundle(
                     name = pkg.qualified_name()
                     break
 
-            package_listing += f"  {name} ({version})\n"
+            package_listing += (
+                f"  [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version}[/zkg.ver])\n"
+            )
 
         UI.info("The following packages will be INSTALLED:")
         UI.info(package_listing)
@@ -707,15 +731,15 @@ def cmd_unbundle(
         name = ipkg2.package.qualified_name()
 
         if not need_load:
-            UI.info(f'Skipped loading "{name}"')
+            UI.info(f"Skipped loading [zkg.pkg]{name}[/zkg.pkg]")
             continue
 
         load_error = manager.load(name)
 
         if load_error:
-            UI.info(f'Failed loading "{name}": {load_error}')
+            UI.info(f"Failed loading [zkg.pkg]{name}[/zkg.pkg]: {load_error}")
         else:
-            UI.info(f'Loaded "{name}"')
+            UI.info(f"Loaded [zkg.pkg]{name}[/zkg.pkg]")
 
     UI.info("Unbundling complete.")
 
@@ -737,11 +761,11 @@ def cmd_remove(
         ipkg = manager.find_installed_package(name)
 
         if not ipkg:
-            UI.error(f'package "{name}" is not installed')
+            UI.error(f"package [zkg.pkg]{name}[/zkg.pkg] is not installed")
             sys.exit(1)
 
         if ipkg.is_builtin():
-            UI.info(f'cannot remove "{name}": built-in package')
+            UI.info(f"cannot remove [zkg.pkg]{name}[/zkg.pkg]: built-in package")
             sys.exit(1)
 
         packages_to_remove.append(ipkg)
@@ -761,7 +785,7 @@ def cmd_remove(
         UI.info("The following packages will be REMOVED:")
 
         for ipkg in packages_to_remove:
-            UI.info(f"  {ipkg.package.qualified_name()}")
+            UI.info(f"  [zkg.pkg]{ipkg.package.qualified_name()}[/zkg.pkg]")
 
         UI.info()
 
@@ -771,7 +795,7 @@ def cmd_remove(
             for pkg_name in sorted(dependers_to_unload):
                 ipkg = manager.find_installed_package(pkg_name)
                 assert ipkg
-                UI.info(f"  {ipkg.package.qualified_name()}")
+                UI.info(f"  [zkg.pkg]{ipkg.package.qualified_name()}[/zkg.pkg]")
 
             UI.info()
 
@@ -784,12 +808,14 @@ def cmd_remove(
         name = ipkg.package.qualified_name()
 
         if manager.unload(name):
-            UI.info(f'Unloaded "{name}"')
+            UI.info(f"Unloaded [zkg.pkg]{name}[/zkg.pkg]")
         else:
             # Weird that it failed, but if it's not installed and there's
             # nothing to unload, not worth using a non-zero exit-code to
             # reflect an overall failure of the package removal operation
-            UI.info(f'Failed unloading "{name}": no such package installed')
+            UI.info(
+                f"Failed unloading [zkg.pkg]{name}[/zkg.pkg]: no such package installed",
+            )
 
     had_failure = False
 
@@ -799,7 +825,7 @@ def cmd_remove(
         backup_files = manager.backup_modified_files(name, modifications)
 
         if manager.remove(name):
-            UI.info(f'Removed "{name}"')
+            UI.info(f"Removed [zkg.pkg]{name}[/zkg.pkg]")
 
             if backup_files:
                 UI.info("\tCreated backups of locally modified config files:")
@@ -808,7 +834,9 @@ def cmd_remove(
                     UI.info("\t" + backup_file)
 
         else:
-            UI.info(f'Failed removing "{name}": no such package installed')
+            UI.info(
+                f"Failed removing [zkg.pkg]{name}[/zkg.pkg]: no such package installed",
+            )
             had_failure = True
 
     if had_failure:
@@ -831,7 +859,7 @@ def cmd_purge(
         names_to_remove = [ipkg.package.qualified_name() for ipkg in packages_to_remove]
 
         for name in names_to_remove:
-            package_listing += f"  {name}\n"
+            package_listing += f"  [zkg.pkg]{name}[/zkg.pkg]\n"
 
         UI.info("The following packages will be REMOVED:")
         UI.info(package_listing)
@@ -847,7 +875,7 @@ def cmd_purge(
         backup_files = manager.backup_modified_files(name, modifications)
 
         if manager.remove(name):
-            UI.info(f'Removed "{name}"')
+            UI.info(f"Removed [zkg.pkg]{name}[/zkg.pkg]")
 
             if backup_files:
                 UI.info("\tCreated backups of locally modified config files:")
@@ -856,7 +884,7 @@ def cmd_purge(
                     UI.info("\t" + backup_file)
 
         else:
-            UI.info(f'Unknown error removing "{name}"')
+            UI.info(f"Unknown error removing [zkg.pkg]{name}[/zkg.pkg]")
             had_failure = True
 
     if had_failure:
@@ -891,7 +919,7 @@ def cmd_refresh(
     had_aggregation_failure = False
 
     for source in args.sources:
-        UI.info(f"Refresh package source: {source}")
+        UI.info(f"Refresh package source: [zkg.src]{source}[/zkg.src]")
 
         src_pkgs_before = {i.qualified_name() for i in manager.source_packages()}
 
@@ -911,7 +939,7 @@ def cmd_refresh(
 
         if error:
             had_failure = True
-            UI.error(f'failed to refresh "{source}": {error}')
+            UI.error(f"failed to refresh [zkg.src]{source}[/zkg.src]: {error}")
             continue
 
         src_pkgs_after = {i.qualified_name() for i in manager.source_packages()}
@@ -924,7 +952,7 @@ def cmd_refresh(
 
             for name in diff:
                 change = "Added" if name in src_pkgs_after else "Removed"
-                UI.info(f"\t\t{change} {name}")
+                UI.info(f"\t\t{change} [zkg.pkg]{name}[/zkg.pkg]")
 
         if args.aggregate:
             if aggregation_issues:
@@ -959,7 +987,7 @@ def cmd_refresh(
             if not ipkg:
                 continue
             version_change = version_change_string(manager, ipkg)
-            UI.info(f"\t\t{name} {version_change}")
+            UI.info(f"\t\t[zkg.pkg]{name}[/zkg.pkg] {version_change}")
 
     if had_failure:
         sys.exit(1)
@@ -981,9 +1009,11 @@ def version_change_string(
         if len(versions):
             new_version = versions[-1]
 
-        version_change = f"({old_version} -> {new_version})"
+        version_change = (
+            f"([zkg.ver]{old_version}[/zkg.ver] -> [zkg.ver]{new_version}[/zkg.ver])"
+        )
     else:
-        version_change = f"({new_version})"
+        version_change = f"([zkg.ver]{new_version}[/zkg.ver])"
 
     return version_change
 
@@ -1004,7 +1034,7 @@ def cmd_upgrade(
         ipkg = manager.find_installed_package(name)
 
         if not ipkg:
-            UI.error(f'package "{name}" is not installed')
+            UI.error(f"package [zkg.pkg]{name}[/zkg.pkg] is not installed")
             sys.exit(1)
 
         name = ipkg.package.qualified_name()
@@ -1022,7 +1052,9 @@ def cmd_upgrade(
         )
 
         if info.invalid_reason:
-            UI.error(f'invalid package "{name}": {info.invalid_reason}')
+            UI.error(
+                f"invalid package [zkg.pkg]{name}[/zkg.pkg]: {info.invalid_reason}",
+            )
             sys.exit(1)
 
         next_version = ipkg.status.current_version
@@ -1034,7 +1066,7 @@ def cmd_upgrade(
 
         outdated_packages.append((info, next_version, False))
         version_change = version_change_string(manager, ipkg)
-        package_listing += f"  {name} {version_change}\n"
+        package_listing += f"  [zkg.pkg]{name}[/zkg.pkg] {version_change}\n"
 
     if not outdated_packages:
         UI.info("All packages already up-to-date.")
@@ -1067,7 +1099,9 @@ def cmd_upgrade(
 
             for info, version, suggestion in new_pkgs:
                 name = info.package.qualified_name()
-                dependency_listing += f"  {name} ({version})"
+                dependency_listing += (
+                    f"  [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version}[/zkg.ver])"
+                )
 
                 if suggestion:
                     dependency_listing += " (suggested)"
@@ -1084,11 +1118,11 @@ def cmd_upgrade(
             extdeps = info.dependencies(field="external_depends")
 
             if extdeps is None:
-                extdep_listing += f"  from {name} ({version2}):\n    <malformed>\n"
+                extdep_listing += f"  from [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version2}[/zkg.ver]):\n    <malformed>\n"
                 continue
 
             if extdeps:
-                extdep_listing += f"  from {name} ({version2}):\n"
+                extdep_listing += f"  from [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{version2}[/zkg.ver]):\n"
 
                 for extdep, semver in sorted(extdeps.items()):
                     extdep_listing += f"    {extdep} {semver}\n"
@@ -1119,7 +1153,7 @@ def cmd_upgrade(
             next_info = manager.info(name, version=version3, prefer_installed=False)
             if next_info.invalid_reason:
                 UI.error(
-                    f'invalid package "{name}": {next_info.invalid_reason}',
+                    f"invalid package [zkg.pkg]{name}[/zkg.pkg]: {next_info.invalid_reason}",
                 )
                 sys.exit(1)
 
@@ -1130,7 +1164,7 @@ def cmd_upgrade(
                 )
                 continue
 
-            UI.info(f'Running unit tests for "{name}"')
+            UI.info(f"Testing [zkg.pkg]{name}[/zkg.pkg]")
             error_msg = ""
             # As in cmd_install, we always process dependencies since the tests
             # might well fail without them. If the user wants --nodeps and the
@@ -1145,7 +1179,7 @@ def cmd_upgrade(
                 error_msg = f"failed to run tests for {name}: {error}"
             elif not passed:
                 error_msg = (
-                    f'"{name}" tests failed, inspect'
+                    f"[zkg.pkg]{name}[/zkg.pkg] tests failed, inspect"
                     f" {manager.package_test_log(info.package.name)} and"
                     f" the contents of {test_dir}"
                 )
@@ -1165,25 +1199,27 @@ def cmd_upgrade(
     for info, version, _ in reversed(new_pkgs):
         name = info.package.qualified_name()
 
-        UI.info(f'Installing "{name}"', flush=True)
+        UI.info(f"Installing [zkg.pkg]{name}[/zkg.pkg]", flush=True)
         # Use default arguments here to avoid late-binding closure:
         err = UI.call_activity(lambda n=name, v=version: manager.install(n, v))
 
         if err:
-            UI.info(f'Failed installing "{name}": {err}')
+            UI.info(f"Failed installing [zkg.pkg]{name}[/zkg.pkg]: {err}")
             continue
 
         ipkg = manager.find_installed_package(name)
         assert ipkg
-        UI.info(f'Installed "{name}" ({ipkg.status.current_version})')
+        UI.info(
+            f"Installed [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{ipkg.status.current_version}[/zkg.ver])",
+        )
 
         if manager.has_scripts(ipkg):
             load_error = manager.load(name)
 
             if load_error:
-                UI.info(f'Failed loading "{name}": {load_error}')
+                UI.info(f"Failed loading [zkg.pkg]{name}[/zkg.pkg]: {load_error}")
             else:
-                UI.info(f'Loaded "{name}"')
+                UI.info(f"Loaded [zkg.pkg]{name}[/zkg.pkg]")
 
     had_failure = False
 
@@ -1202,12 +1238,14 @@ def cmd_upgrade(
         res = manager.upgrade(name)
 
         if res:
-            UI.info(f'Failed upgrading "{name}": {res}')
+            UI.info(f"Failed upgrading [zkg.pkg]{name}[/zkg.pkg]: {res}")
             had_failure = True
         else:
             ipkg = manager.find_installed_package(name)
             assert ipkg
-            UI.info(f'Upgraded "{name}" ({ipkg.status.current_version})')
+            UI.info(
+                f"Upgraded [zkg.pkg]{name}[/zkg.pkg] ([zkg.ver]{ipkg.status.current_version}[/zkg.ver])",
+            )
 
         for i, mf in enumerate(modifications):
             next_upstream_config_file = mf[1]
@@ -1248,11 +1286,15 @@ def cmd_load(
 
         if not ipkg:
             had_failure = True
-            UI.info(f'Failed to load "{name}": no such package installed')
+            UI.info(
+                f"Failed to load [zkg.pkg]{name}[/zkg.pkg]: no such package installed",
+            )
             continue
 
         if not manager.has_scripts(ipkg):
-            UI.info(f'The package "{name}" does not contain scripts to load.')
+            UI.info(
+                f"The package [zkg.pkg]{name}[/zkg.pkg] does not contain scripts to load.",
+            )
             continue
 
         name = ipkg.package.qualified_name()
@@ -1272,7 +1314,7 @@ def cmd_load(
             for _name, _error in loaded_dep_list:
                 if _error:
                     load_error = True
-                    dep_error_listing += f"  {_name}: {_error}\n"
+                    dep_error_listing += f"  [zkg.pkg]{_name}[/zkg.pkg]: {_error}\n"
 
             if not load_error:
                 dep_listing = get_changed_state(manager, saved_state, [name])
@@ -1280,7 +1322,7 @@ def cmd_load(
                 if dep_listing:
                     UI.info(
                         "The following installed packages were additionally loaded to satisfy"
-                        f' runtime dependencies for "{name}".',
+                        f" runtime dependencies for [zkg.pkg]{name}[/zkg.pkg].",
                     )
                     UI.info(dep_listing)
 
@@ -1290,14 +1332,14 @@ def cmd_load(
             if not args.nodeps:
                 if dep_error_listing:
                     UI.info(
-                        f'The following installed dependencies could not be loaded for "{name}".',
+                        f"The following installed dependencies could not be loaded for [zkg.pkg]{name}[/zkg.pkg].",
                     )
                     UI.info(dep_error_listing)
                     manager.restore_loaded_package_states(saved_state)
 
-            UI.info(f'Failed to load "{name}": {load_error}')
+            UI.info(f"Failed to load [zkg.pkg]{name}[/zkg.pkg]: {load_error}")
         else:
-            UI.info(f'Loaded "{name}"')
+            UI.info(f"Loaded [zkg.pkg]{name}[/zkg.pkg]")
 
     if had_failure:
         sys.exit(1)
@@ -1323,7 +1365,9 @@ def cmd_unload(
 
         if not ipkg:
             had_failure = True
-            UI.info(f'Failed to unload "{name}": no such package installed')
+            UI.info(
+                f"Failed to unload [zkg.pkg]{name}[/zkg.pkg]: no such package installed",
+            )
             continue
 
         if not ipkg.status.is_loaded:
@@ -1333,7 +1377,7 @@ def cmd_unload(
         # packages are really built-in plugins and there is not a way
         # to unload them.
         if ipkg.is_builtin():
-            UI.info(f'cannot unload "{name}": built-in package')
+            UI.info(f"cannot unload [zkg.pkg]{name}[/zkg.pkg]: built-in package")
             sys.exit(1)
 
         packages_to_unload.append(ipkg)
@@ -1351,7 +1395,7 @@ def cmd_unload(
         UI.info("The following packages will be UNLOADED:")
 
         for ipkg in packages_to_unload:
-            UI.info(f"  {ipkg.package.qualified_name()}")
+            UI.info(f"  [zkg.pkg]{ipkg.package.qualified_name()}[/zkg.pkg]")
 
         UI.info()
 
@@ -1361,7 +1405,7 @@ def cmd_unload(
             for pkg_name in sorted(dependers_to_unload):
                 ipkg = manager.find_installed_package(pkg_name)
                 assert ipkg
-                UI.info(f"  {ipkg.package.qualified_name()}")
+                UI.info(f"  [zkg.pkg]{ipkg.package.qualified_name()}[/zkg.pkg]")
 
             UI.info()
 
@@ -1380,10 +1424,12 @@ def cmd_unload(
         name = ipkg.package.qualified_name()
 
         if manager.unload(name):
-            UI.info(f'Unloaded "{name}"')
+            UI.info(f"Unloaded [zkg.pkg]{name}[/zkg.pkg]")
         else:
             had_failure = True
-            UI.info(f'Failed unloading "{name}": no such package installed')
+            UI.info(
+                f"Failed unloading [zkg.pkg]{name}[/zkg.pkg]: no such package installed",
+            )
 
     if had_failure:
         sys.exit(1)
@@ -1400,12 +1446,14 @@ def cmd_pin(
 
         if not ipkg:
             had_failure = True
-            UI.info(f'Failed to pin "{name}": no such package installed')
+            UI.info(
+                f"Failed to pin [zkg.pkg]{name}[/zkg.pkg]: no such package installed",
+            )
             continue
 
         if ipkg.is_builtin():
             had_failure = True
-            UI.info(f'cannot pin "{name}": built-in package')
+            UI.info(f"cannot pin [zkg.pkg]{name}[/zkg.pkg]: built-in package")
             continue
 
         name = ipkg.package.qualified_name()
@@ -1413,11 +1461,13 @@ def cmd_pin(
 
         if ipkg:
             UI.info(
-                f'Pinned "{name}" at version: {ipkg.status.current_version} ({ipkg.status.current_hash})',
+                f"Pinned [zkg.pkg]{name}[/zkg.pkg] at version: [zkg.ver]{ipkg.status.current_version}[/zkg.ver] ({ipkg.status.current_hash})",
             )
         else:
             had_failure = True
-            UI.info(f'Failed pinning "{name}": no such package installed')
+            UI.info(
+                f"Failed pinning [zkg.pkg]{name}[/zkg.pkg]: no such package installed",
+            )
 
     if had_failure:
         sys.exit(1)
@@ -1434,12 +1484,14 @@ def cmd_unpin(
 
         if not ipkg:
             had_failure = True
-            UI.info(f'Failed to unpin "{name}": no such package installed')
+            UI.info(
+                f"Failed to unpin [zkg.pkg]{name}[/zkg.pkg]: no such package installed",
+            )
             continue
 
         if ipkg.is_builtin():
             had_failure = True
-            UI.info(f'cannot unpin "{name}": built-in package')
+            UI.info(f"cannot unpin [zkg.pkg]{name}[/zkg.pkg]: built-in package")
             continue
 
         name = ipkg.package.qualified_name()
@@ -1447,11 +1499,13 @@ def cmd_unpin(
 
         if ipkg:
             UI.info(
-                f'Unpinned "{name}" from version: {ipkg.status.current_version} ({ipkg.status.current_hash})',
+                f"Unpinned [zkg.pkg]{name}[zkg.pkg] from version: [zkg.ver]{ipkg.status.current_version}[/zkg.ver] ({ipkg.status.current_hash})",
             )
         else:
             had_failure = True
-            UI.info(f'Failed unpinning "{name}": no such package installed')
+            UI.info(
+                f"Failed unpinning [zkg.pkg]{name}[/zkg.pkg]: no such package installed",
+            )
 
     if had_failure:
         sys.exit(1)
@@ -1527,10 +1581,10 @@ def cmd_list(
             if val.is_builtin() and not args.include_builtin:
                 continue
 
-            out = f"{pkg_name} (installed: {val.status.current_version})"
+            out = f"[zkg.pkg]{pkg_name}[/zkg.pkg] (installed: [zkg.ver]{val.status.current_version}[/zkg.ver])"
         else:
             pkg = val
-            out = pkg_name
+            out = f"[zkg.pkg]{pkg_name}[/zkg.pkg]"
 
         if not args.nodesc:
             desc = pkg.short_description()
@@ -1576,12 +1630,12 @@ def cmd_search(
 
     if matches:
         for match in sorted(matches):
-            out = match.qualified_name()
+            out = f"[zkg.pkg]{match.qualified_name()}[/zkg.pkg]"
 
             ipkg = manager.find_installed_package(match.qualified_name())
 
             if ipkg:
-                out += f" (installed: {ipkg.status.current_version})"
+                out += f" (installed: [zkg.ver]{ipkg.status.current_version}[/zkg.ver])"
 
             desc = match.short_description()
 
@@ -1637,7 +1691,7 @@ def cmd_info(
             pkginfo[name] = {}
             pkginfo[name]["metadata"] = {}
         else:
-            UI.info(f'"{name}" info:')
+            UI.info(f"[zkg.pkg]{name}[/zkg.pkg] info:")
 
         if info2.invalid_reason:
             if args.json:
@@ -1674,7 +1728,9 @@ def cmd_info(
         else:
             if info2.metadata_file:
                 UI.info(f"\tmetadata file: {info2.metadata_file}")
-            UI.info(f'\tmetadata (from version "{info2.metadata_version}"):')
+            UI.info(
+                f'\tmetadata (from version "[zkg.ver]{info2.metadata_version}[/zkg.ver]"):',
+            )
 
         if len(info2.metadata) == 0:
             if not args.json:

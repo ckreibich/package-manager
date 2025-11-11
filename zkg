@@ -63,9 +63,8 @@ def main() -> None:
 
     for name, url in zeekpkg.CONFIG.items("sources"):
         if err := manager.add_source(name, url):
-            print(
-                f'warning: skipped using package source named "{name}" ({url}): {err}',
-                file=sys.stderr,
+            zeekpkg.UI.warning(
+                f"skipping package source [zkg.src]{name}[/zkg.src] ({url}): {err}",
             )
 
     args.run_cmd(manager, args)

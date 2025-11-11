@@ -12,13 +12,13 @@ one = <...>/sources/one
 default = https://github.com/zeek/package-template
 
 
-Installing "one/alice/foo"
-Installed "one/alice/foo" (main)
-Loaded "one/alice/foo"
+Installing one/alice/foo
+Installed one/alice/foo (main)
+Loaded one/alice/foo
 one/alice/foo (installed: main)
-Installing "zeek/alice/bar"
-Installed "zeek/alice/bar" (master)
-Loaded "zeek/alice/bar"
+Installing zeek/alice/bar
+Installed zeek/alice/bar (master)
+Loaded zeek/alice/bar
 zeek/alice/bar (installed: master)
 Successfully wrote config file to <...>/home/testuser/.zkg/config
 [paths]
