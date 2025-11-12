@@ -94,7 +94,7 @@ def prompt_for_user_vars(
             UI.warning("could not find config file to save to.")
             return
         if CONFIG.save(configfile):
-            UI.info(f"Saved answers to config file: {configfile}")
+            UI.info(f"Saved answers to config file: [zkg.file]{configfile}[/zkg.file]")
 
 
 def get_changed_state(
@@ -199,7 +199,7 @@ def cmd_test(
             UI.error(
                 f"error: package [zkg.pkg]{name}[/zkg.pkg] tests failed, inspect"
                 f" {manager.package_test_log(info.package.name)} and"
-                f" the contents of {test_dir}",
+                f" the contents of [zkg.file]{test_dir}[/zkg.file]",
             )
 
     if not all_passed:
@@ -363,7 +363,7 @@ def cmd_install(
                 error_msg = (
                     f"[zkg.pkg]{name}[/zkg.pkg] tests failed, inspect"
                     f" {manager.package_test_log(info.package.name)} and"
-                    f" the contents of {test_dir}"
+                    f" the contents of [zkg.file]{test_dir}[/zkg.file]"
                 )
 
             if error_msg:
@@ -616,7 +616,7 @@ def cmd_bundle(
         UI.error("failed to create bundle: {error}")
         sys.exit(1)
 
-    UI.info(f"Bundle successfully written: {args.bundle_filename}")
+    UI.info(f"Bundle successfully written: [zkg.file]{args.bundle_filename}[/zkg.file]")
 
 
 def cmd_unbundle(
@@ -634,7 +634,9 @@ def cmd_unbundle(
     error, bundle_info = manager.bundle_info(args.bundle_filename)
 
     if error:
-        UI.error("failed to unbundle {args.bundle_filename}: {error}")
+        UI.error(
+            "failed to unbundle [zkg.file]{args.bundle_filename}[/zkg.file]: {error}",
+        )
         sys.exit(1)
 
     for git_url, _, pkg_info in bundle_info:
@@ -713,7 +715,9 @@ def cmd_unbundle(
     error = manager.unbundle(args.bundle_filename)
 
     if error:
-        UI.error("failed to unbundle {args.bundle_filename}: {error}")
+        UI.error(
+            "failed to unbundle [zkg.file]{args.bundle_filename}[/zkg.file]: {error}",
+        )
         sys.exit(1)
 
     for git_url, _, _ in bundle_info:
@@ -725,7 +729,7 @@ def cmd_unbundle(
         ipkg2 = manager.find_installed_package(git_url)
 
         if not ipkg2:
-            UI.info(f'Skipped loading "{git_url}": failed to install')
+            UI.info(f"Skipped loading [zkg.pkg]{git_url}[/zkg.pkg]: failed to install")
             continue
 
         name = ipkg2.package.qualified_name()
@@ -962,7 +966,7 @@ def cmd_refresh(
                 )
 
                 for url, issue in aggregation_issues:
-                    UI.info(f"\t\t{url}: {issue}")
+                    UI.info(f"\t\t[zkg.pkg]{url}[/zkg.pkg]: {issue}")
                 if args.fail_on_aggregate_problems:
                     had_aggregation_failure = True
             else:
@@ -1176,12 +1180,14 @@ def cmd_upgrade(
             )
 
             if error:
-                error_msg = f"failed to run tests for {name}: {error}"
+                error_msg = (
+                    f"failed to run tests for [zkg.pkg]{name}[/zkg.pkg]: {error}"
+                )
             elif not passed:
                 error_msg = (
                     f"[zkg.pkg]{name}[/zkg.pkg] tests failed, inspect"
                     f" {manager.package_test_log(info.package.name)} and"
-                    f" the contents of {test_dir}"
+                    f" the contents of [zkg.file]{test_dir}[/zkg.file]"
                 )
 
             if error_msg:
@@ -1832,7 +1838,9 @@ def cmd_autoconfig(
     if args.user:
         configfile = os.path.join(CONFIG.home_config_dir(), "config")
         if CONFIG.save(configfile):
-            UI.info(f"Successfully wrote config file to {configfile}")
+            UI.info(
+                f"Successfully wrote config file to [zkg.file]{configfile}[/zkg.file]",
+            )
         return
 
     configfile = CONFIG.find_configfile(args)
@@ -1873,7 +1881,7 @@ def cmd_autoconfig(
 
     CONFIG.save(configfile)
 
-    UI.info(f"Successfully wrote config file to {configfile}")
+    UI.info(f"Successfully wrote config file to [zkg.file]{configfile}[/zkg.file]")
 
 
 def cmd_env(

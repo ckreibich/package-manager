@@ -195,6 +195,7 @@ class ColorMarkup(Markup):
 
         self.add_rule(Markup.Rule("[zkg.pkg]", "[blue1]"))
         self.add_rule(Markup.Rule("[zkg.src]", "[blue1]"))
+        self.add_rule(Markup.Rule("[zkg.file]", "[yellow]"))
         self.add_rule(Markup.Rule("[zkg.ver]", "[green]"))
         self.add_rule(Markup.Rule("[zkg.debug]", "[grey66]"))
         self.add_rule(Markup.Rule("[zkg.verbose]", "[grey66]"))
