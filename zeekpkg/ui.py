@@ -1,14 +1,25 @@
 import abc
 import argparse
+import logging
 import re
 import sys
 import threading
 from collections.abc import Callable
+from enum import Enum
 from typing import Any, TextIO
 
 # A type for the kind of callable we use for activities:
 # they return an error string upon completion.
 UiCallable = Callable[..., str]
+
+
+# Log levels for the log UI
+class LogLevel(Enum):
+    DEBUG = logging.DEBUG
+    VERBOSE = 15
+    INFO = logging.INFO
+    WARNING = logging.WARNING
+    ERROR = logging.ERROR
 
 
 class Activity(abc.ABC):
@@ -204,6 +215,9 @@ class ColorMarkup(Markup):
 
 
 class UserInterface(abc.ABC):
+    # A brief name to show for the UI implementation, e.g. in help output.
+    shortname = ""
+
     def __init__(self, verbosity: int = 0) -> None:
         self.verbosity = verbosity
         self.markup: Markup = PlaintextMarkup()
@@ -337,6 +351,8 @@ class UserInterface(abc.ABC):
 class PlainUI(UserInterface):
     """A basic plaintext UI, suitable for the console or redirection to files."""
 
+    shortname = "plain"
+
     def __init__(
         self,
         verbosity: int = 0,
@@ -434,6 +450,110 @@ class PlainUI(UserInterface):
         return act.error
 
 
+class LogUI(UserInterface):
+    """A UI using the logger interface for output.
+
+    It does not provide any kind of progress logging beyond the beginning and
+    end of the respective operation.
+    """
+
+    shortname = "log"
+
+    def __init__(self, verbosity: int = 0):
+        super().__init__()
+        self.logger = logging.getLogger(__name__)
+
+        if verbosity == 0:
+            self.logger.setLevel(LogLevel.INFO.value)
+        elif verbosity == 1:
+            self.logger.setLevel(LogLevel.VERBOSE.value)
+        elif verbosity >= 2:
+            self.logger.setLevel(LogLevel.DEBUG.value)
+
+        formatter = logging.Formatter(
+            "%(asctime)s %(levelname)-8s %(message)s",
+            "%Y-%m-%d %H:%M:%S",
+        )
+
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(formatter)
+
+        self.logger.addHandler(handler)
+
+    def debug(
+        self,
+        *msgs: str,
+        prefix: str = "",
+        sep: str = " ",
+        end: str = "",
+        flush: bool = False,
+    ) -> None:
+        _, _, _ = prefix, end, flush  # Ignored
+        msgs = self._markup_list(msgs)
+        self.logger.log(LogLevel.DEBUG.value, sep.join(msgs))
+
+    def verbose(
+        self,
+        *msgs: str,
+        prefix: str = "",
+        sep: str = " ",
+        end: str = "",
+        flush: bool = False,
+    ) -> None:
+        _, _, _ = prefix, end, flush  # Ignored
+        msgs = self._markup_list(msgs)
+        self.logger.log(LogLevel.VERBOSE.value, sep.join(msgs))
+
+    def info(
+        self,
+        *msgs: str,
+        prefix: str = "",
+        sep: str = " ",
+        end: str = "",
+        flush: bool = False,
+    ) -> None:
+        _, _, _ = prefix, end, flush  # Ignored
+        msgs = self._markup_list(msgs)
+        self.logger.log(LogLevel.INFO.value, sep.join(msgs))
+
+    def warning(
+        self,
+        *msgs: str,
+        prefix: str = "",
+        sep: str = " ",
+        end: str = "",
+        flush: bool = False,
+    ) -> None:
+        _, _, _ = prefix, end, flush  # Ignored
+        msgs = self._markup_list(msgs)
+        self.logger.log(LogLevel.WARNING.value, sep.join(msgs))
+
+    def error(
+        self,
+        *msgs: str,
+        prefix: str = "",
+        sep: str = " ",
+        end: str = "",
+        flush: bool = False,
+    ) -> None:
+        _, _, _ = prefix, end, flush  # Ignored
+        msgs = self._markup_list(msgs)
+        self.logger.log(LogLevel.ERROR.value, sep.join(msgs))
+
+    def activity(self, act: Activity) -> str:
+        act()
+        return act.error
+
+    def call_activity(self, call: UiCallable) -> str:
+        act = CallableActivity(call)
+        act()
+        return act.error
+
+    def progress_activity(self, act: ProgressActivity) -> str:
+        act()
+        return act.error
+
+
 class UIProxy:
     """A proxy for a UI, relaying all calls.
 
@@ -453,6 +573,8 @@ try:
     import rich.console  # type: ignore
 
     class RichUI(UserInterface):
+        shortname = "color"
+
         def __init__(
             self,
             verbosity: int = 0,
@@ -574,13 +696,28 @@ except ImportError:
     RichUI: type[UserInterface] = PlainUI  # type: ignore[no-redef]
 
 
+def names() -> list[str]:
+    """Returns an alphabetically sorted list of UI implementation names."""
+    names: set[str] = {LogUI.shortname, PlainUI.shortname, RichUI.shortname}
+    return sorted(names)
+
+
 def configure(args: argparse.Namespace) -> None:
     """Establish the UI as per the user's preferences and terminal capability."""
-    if sys.stdout.isatty():
-        UI.impl = RichUI(verbosity=args.verbose)
-        return
+    cls: type[UserInterface] = PlainUI
 
-    UI.impl = PlainUI(verbosity=args.verbose)
+    if sys.stdout.isatty():
+        cls = RichUI
+
+    if args.console:
+        if args.console == PlainUI.shortname:
+            cls = PlainUI
+        elif args.console == RichUI.shortname:
+            cls = RichUI
+        elif args.console == LogUI.shortname:
+            cls = LogUI
+
+    UI.impl = cls(verbosity=args.verbose)
 
 
 UI: UIProxy = UIProxy()

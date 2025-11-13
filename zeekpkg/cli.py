@@ -51,6 +51,9 @@ from .template import (
 from .ui import (
     UI,
 )
+from .ui import (
+    names as ui_names,
+)
 from .uservar import (
     UserVar,
 )
@@ -2128,6 +2131,12 @@ def _top_level_parser() -> argparse.ArgumentParser:
         default=0,
         help="Increase program output for debugging."
         " Use multiple times for more output (e.g. -vv).",
+    )
+    top_parser.add_argument(
+        "--console",
+        choices=ui_names(),
+        default=None,
+        help="The console output formatting to use.",
     )
     top_parser.add_argument(
         "--extra-source",
