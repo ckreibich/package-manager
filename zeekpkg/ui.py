@@ -4,6 +4,7 @@ import logging
 import re
 import sys
 import threading
+import traceback
 from collections.abc import Callable
 from enum import Enum
 from typing import Any, TextIO
@@ -283,6 +284,18 @@ class UserInterface(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def exception(
+        self,
+        *msgs: str,
+        prefix: str = "Exception:",
+        sep: str = " ",
+        end: str = "\n",
+        flush: bool = False,
+    ) -> None:
+        """Errors out of exception handlers, usually to stderr."""
+        pass
+
+    @abc.abstractmethod
     def activity(self, act: Activity) -> str:
         """Launch an open-ended activity to completion.
 
@@ -430,6 +443,22 @@ class PlainUI(UserInterface):
         else:
             print(*msgs, sep=sep, end=end, file=self.stderr, flush=flush)
 
+    def exception(
+        self,
+        *msgs: str,
+        prefix: str = "Exception:",
+        sep: str = " ",
+        end: str = "\n",
+        flush: bool = False,
+    ) -> None:
+        prefix = self._markup(prefix)
+        msgs = self._markup_list(msgs)
+        if prefix:
+            print(prefix, *msgs, sep=sep, end=end, file=self.stderr, flush=flush)
+        else:
+            print(*msgs, sep=sep, end=end, file=self.stderr, flush=flush)
+        traceback.print_exc()
+
     def activity(self, act: Activity) -> str:
         worker = Worker(act)
         worker.start()
@@ -539,6 +568,18 @@ class LogUI(UserInterface):
         _, _, _ = prefix, end, flush  # Ignored
         msgs = self._markup_list(msgs)
         self.logger.log(LogLevel.ERROR.value, sep.join(msgs))
+
+    def exception(
+        self,
+        *msgs: str,
+        prefix: str = "",
+        sep: str = " ",
+        end: str = "",
+        flush: bool = False,
+    ) -> None:
+        _, _, _ = prefix, end, flush  # Ignored
+        msgs = self._markup_list(msgs)
+        self.logger.exception(sep.join(msgs))
 
     def activity(self, act: Activity) -> str:
         act()
@@ -671,6 +712,23 @@ try:
                 self.errcon.print(prefix, *msgs, sep=sep, end=end)
             else:
                 self.errcon.print(*msgs, sep=sep, end=end)
+
+        def exception(
+            self,
+            *msgs: str,
+            prefix: str = "[zkg.err]Exception[/zkg.err]:",
+            sep: str = " ",
+            end: str = "\n",
+            flush: bool = False,
+        ) -> None:
+            _ = flush  # ignore flush, rich always flushes
+            prefix = self._markup(prefix)
+            msgs = self._markup_list(msgs)
+            if prefix:
+                self.errcon.print(prefix, *msgs, sep=sep, end=end)
+            else:
+                self.errcon.print(*msgs, sep=sep, end=end)
+            self.errcon.print_exception(show_locals=True)
 
         def activity(self, act: Activity) -> str:
             worker = Worker(act)

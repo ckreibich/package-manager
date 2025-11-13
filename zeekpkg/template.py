@@ -30,13 +30,11 @@ from .config import (
 from .consts import (
     VERSION,
 )
-from .logs import (
-    LOG,
-)
 from .package import (
     METADATA_FILENAME,
     name_from_path,
 )
+from .ui import UI
 from .uservar import UserVar
 
 API_VERSION = "1.1.0"
@@ -109,7 +107,9 @@ class Template:
             # not apply. This mirrors the behavior for locally cloned
             # package sources that zkg installs.
             if version is not None:
-                LOG.warning('ignoring version request "%s" on local template', version)
+                UI.warning(
+                    f"ignoring version request [zkg.ver]{version}[/zkg.ver] on local template",
+                )
             try:
                 repo = git.Repo(template)
                 if not repo.is_dirty():
@@ -152,7 +152,7 @@ class Template:
                     repo = git_clone(template, templatedir)
             except git.GitCommandError as error:
                 msg = f'failed to update template "{template}": {error}'
-                LOG.error(msg)
+                UI.error(msg)
                 raise GitError(msg) from error
 
             if version is None:
@@ -167,7 +167,7 @@ class Template:
                 git_checkout(repo, version)
             except git.GitCommandError as error:
                 msg = f'failed to checkout branch/version "{version}" of template {template}: {error}'
-                LOG.warning(msg)
+                UI.warning(msg)
                 raise GitError(msg) from error
 
             try:
@@ -181,21 +181,21 @@ class Template:
                 pass  # Not on a branch, do nothing
             except git.GitCommandError as error:
                 msg = f'failed to update branch "{version}" of template {template}: {error}'
-                LOG.warning(msg)
+                UI.warning(msg)
                 raise GitError(msg) from error
 
         try:
             mod = load_source(os.path.join(templatedir, "__init__.py"))
         except Exception as error:
             msg = f'failed to load template "{template}": {error}'
-            LOG.exception(msg)
+            UI.exception(msg)
             raise LoadError(msg) from error
 
         if not hasattr(mod, "TEMPLATE_API_VERSION"):
             msg = "template{} does not indicate its API version".format(
                 " version " + version if version else "",
             )
-            LOG.error(msg)
+            UI.error(msg)
             raise LoadError(msg)
 
         # The above guards against absence of TEMPLATE_API_VERSION, so
@@ -215,7 +215,7 @@ class Template:
                 mod.TEMPLATE_API_VERSION,
                 API_VERSION,
             )
-            LOG.error(msg)
+            UI.error(msg)
             raise LoadError(msg)
 
         instance: Template = mod.Template(
@@ -464,9 +464,8 @@ class Template:
                 try:
                     res["user_vars"][uvar_name]["used_by"].append("package")
                 except KeyError:
-                    LOG.warning(
-                        'Package requires undefined user var "%s", skipping',
-                        uvar_name,
+                    UI.warning(
+                        f'Package requires undefined user var "{uvar_name}", skipping',
                     )
 
         for feature in self.features():
@@ -475,10 +474,8 @@ class Template:
                 try:
                     res["user_vars"][uvar_name]["used_by"].append(feature.name())
                 except KeyError:
-                    LOG.warning(
-                        'Feature "%s" requires undefined user var "%s"',
-                        feature.name(),
-                        uvar_name,
+                    UI.warning(
+                        f'Feature {feature.name()} requires undefined user var "{uvar_name}"',
                     )
 
         res["features"] = sorted(feature_names)
@@ -641,7 +638,9 @@ class _Content(metaclass=abc.ABCMeta):
                 hdl.write(content)
             shutil.copymode(orig_file, out_file)
         except OSError as error:
-            LOG.warning('I/O error while instantiating "%s": %s', out_file, error)
+            UI.warning(
+                f"I/O error while instantiating [zkg.file]{out_file}[/zkg.file]: {error}",
+            )
 
     def instantiate_symlink(
         self,
@@ -683,7 +682,9 @@ class _Content(metaclass=abc.ABCMeta):
             delete_path(out_file)
             os.symlink(target, out_file)
         except OSError as error:
-            LOG.warning('OS error while creating symlink "%s": %s', out_file, error)
+            UI.warning(
+                f"OS error while creating symlink [zkg.file]{out_file}[/zkg.file]: {error}",
+            )
 
     def _walk(self, tmpl: Template) -> Generator[tuple[str, str, str, str | bytes]]:
         """Generator for instantiating template content.
@@ -718,7 +719,9 @@ class _Content(metaclass=abc.ABCMeta):
                         with open(in_file, "rb") as hdl:
                             out_content = self._replace(tmpl, hdl.read())
                     except OSError as error:
-                        LOG.warning("skipping instantiation of %s: %s", in_file, error)
+                        UI.warning(
+                            f"skipping instantiation of [zkg.file]{in_file}[/zkg.file]: {error}",
+                        )
                         continue
 
                 yield in_file, out_path, out_file, out_content

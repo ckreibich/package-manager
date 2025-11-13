@@ -11,7 +11,7 @@ from functools import total_ordering
 import semantic_version as semver
 
 from ._util import find_sentence_end, normalize_version_tag
-from .logs import LOG
+from .ui import UI
 from .uservar import UserVar
 
 #: The name of files used by packages to store their metadata.
@@ -51,13 +51,13 @@ def parse_package_metadata(
 ) -> str:
     """Return string explaining why metadata is invalid, or '' if valid."""
     if not parser.read(metadata_file):
-        LOG.warning("%s: missing metadata file", metadata_file)
+        UI.warning(f"{metadata_file}: missing metadata file")
         return (
             f"missing {METADATA_FILENAME} (or {LEGACY_METADATA_FILENAME}) metadata file"
         )
 
     if not parser.has_section("package"):
-        LOG.warning("%s: metadata missing [package]", metadata_file)
+        UI.warning(f"{metadata_file}: metadata missing [package]")
         return f"{os.path.basename(metadata_file)} is missing [package] section"
 
     for a in aliases(get_package_metadata(parser)):

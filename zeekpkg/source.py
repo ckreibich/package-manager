@@ -25,7 +25,6 @@ from ._util import (
 from .config import (
     CONFIG,
 )
-from .logs import LOG
 from .package import (
     Package,
     get_package_metadata,
@@ -33,6 +32,7 @@ from .package import (
     parse_package_metadata,
     pick_metadata_file,
 )
+from .ui import UI
 
 #: The name of package index files.
 INDEX_FILENAME = "zkg.index"
@@ -100,23 +100,30 @@ class Source:
         try:
             self.clone = git.Repo(clone_path)
         except git.NoSuchPathError:
-            LOG.debug('creating source clone of "%s" at %s', name, clone_path)
+            UI.debug(
+                f"creating source clone of [zkg.src]{name}[/zkg.src]"
+                f" at [zkg.file]{clone_path}[/zkg.file]",
+            )
             self.clone = git_clone(git_url, clone_path, shallow=True)
         except git.InvalidGitRepositoryError:
-            LOG.debug('deleting invalid source clone of "%s" at %s', name, clone_path)
+            UI.debug(
+                f"deleting invalid source clone of [zkg.src]{name}[/zkg.src]"
+                f" at [zkg.file]{clone_path}[/zkg.file]",
+            )
             shutil.rmtree(clone_path)
             self.clone = git_clone(git_url, clone_path, shallow=True)
         else:
-            LOG.debug('found source clone of "%s" at %s', name, clone_path)
+            UI.debug(
+                f"found source clone of [zkg.src]{name}[/zkg.src]"
+                f" at [zkg.file]{clone_path}[/zkg.file]",
+            )
             old_url = self.clone.git.config("--local", "--get", "remote.origin.url")
 
             if git_url != old_url:
-                LOG.debug(
-                    'url of source "%s" changed from %s to %s, reclone at %s',
-                    name,
-                    old_url,
-                    git_url,
-                    clone_path,
+                UI.debug(
+                    f"url of source [zkg.src]{name}[/zkg.src] changed"
+                    f" from {old_url} to {git_url}, reclone at"
+                    f" [zkg.file]{clone_path}[/zkg.file]",
                 )
                 shutil.rmtree(clone_path)
                 self.clone = git_clone(git_url, clone_path, shallow=True)
@@ -195,7 +202,7 @@ class Source:
         return rval
 
     def refresh(self) -> str:
-        LOG.debug('refresh "%s": pulling %s', self.name, self.git_url)
+        UI.debug(f"refresh [zkg.src]{self.name}[/zkg.src]: pulling {self.git_url}")
 
         agg_file_ours = os.path.join(CONFIG.scratch_dir(), AGGREGATE_DATA_FILE)
         agg_file_their_orig = agg_file_ours + ".orig"
@@ -216,7 +223,7 @@ class Source:
             self.clone.git.fetch("--recurse-submodules=yes")
             git_pull(self.clone)
         except git.GitCommandError as error:
-            LOG.error("failed to pull source %s: %s", self.name, error)
+            UI.error(f"failed to pull source [zkg.src]{self.name}[/zkg.src]: {error}")
             return f"failed to pull from remote source: {error}"
 
         if os.path.isfile(agg_file_ours):
@@ -227,20 +234,20 @@ class Source:
                     if filecmp.cmp(self.aggregate_file, agg_file_their_orig):
                         # Their file hasn't changed, use ours.
                         shutil.copy2(agg_file_ours, self.aggregate_file)
-                        LOG.debug(
+                        UI.debug(
                             "aggregate file in source unchanged, restore local one",
                         )
                     else:
                         # Their file changed, use theirs.
-                        LOG.debug("aggregate file in source changed, discard local one")
+                        UI.debug("aggregate file in source changed, discard local one")
                 else:
                     # File was untracked before pull and tracked after,
                     # use their version.
-                    LOG.debug("new aggregate file in source, discard local one")
+                    UI.debug("new aggregate file in source, discard local one")
             else:
                 # They don't have the file after pulling, so restore ours.
                 shutil.copy2(agg_file_ours, self.aggregate_file)
-                LOG.debug("no aggregate file in source, restore local one")
+                UI.debug("no aggregate file in source, restore local one")
 
         return ""
 
@@ -270,11 +277,7 @@ class Source:
                 try:
                     clone = git_clone(url, clonepath, shallow=True)
                 except git.GitCommandError as error:
-                    LOG.warning(
-                        "failed to clone %s, skipping aggregation: %s",
-                        url,
-                        error,
-                    )
+                    UI.warning(f"failed to clone {url}, skipping aggregation: {error}")
                     aggregation_issues.append((url, repr(error)))
                     continue
 
@@ -288,14 +291,11 @@ class Source:
                 try:
                     git_checkout(clone, version)
                 except git.GitCommandError as error:
-                    LOG.warning(
-                        'failed to checkout branch/version "%s" of %s, '
-                        "skipping aggregation: %s",
-                        version,
-                        url,
-                        error,
+                    UI.warning(
+                        f"failed to checkout [zkg.ver]{version}[/zkg.ver] of {url},"
+                        f" skipping aggregation: {error}",
                     )
-                    msg = f'failed to checkout branch/version "{version}": {error!r}'
+                    msg = f"failed to checkout [zkg.ver]{version}[/zkg.ver]: {error!r}"
                     aggregation_issues.append((url, msg))
                     continue
 
@@ -307,10 +307,8 @@ class Source:
                 )
 
                 if invalid_reason:
-                    LOG.warning(
-                        "skipping aggregation of %s: bad metadata: %s",
-                        url,
-                        invalid_reason,
+                    UI.warning(
+                        f"skipping aggregation of {url}: bad metadata: {invalid_reason}",
                     )
                     aggregation_issues.append((url, invalid_reason))
                     continue
@@ -349,14 +347,10 @@ class Source:
         mods_str = " (" + ", ".join(sorted(agg_mods)) + ")" if agg_mods else ""
         dels_str = " (" + ", ".join(sorted(agg_dels)) + ")" if agg_dels else ""
 
-        LOG.debug(
-            "metadata refresh: %d additions%s, %d changes%s, %d removals%s",
-            len(agg_adds),
-            adds_str,
-            len(agg_mods),
-            mods_str,
-            len(agg_dels),
-            dels_str,
+        UI.debug(
+            f"metadata refresh: {len(agg_adds)} additions{adds_str},"
+            f" {len(agg_mods)} changes{mods_str},"
+            f" {len(agg_dels)} removals{dels_str}",
         )
 
         if push:
@@ -377,7 +371,9 @@ class Source:
                     "--message",
                     "Update aggregated metadata.",
                 )
-                LOG.info('committed package source "%s" metadata update', self.name)
+                UI.verbose(
+                    f"committed package source [zkg.src]{self.name}[/zkg.src] metadata update",
+                )
 
             self.clone.git.push("--no-verify")
 

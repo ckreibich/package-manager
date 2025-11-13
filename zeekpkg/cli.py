@@ -32,7 +32,6 @@ from .consts import (
     ZKG_DEFAULT_SOURCE,
     ZKG_DEFAULT_TEMPLATE,
 )
-from .logs import LOG
 from .manager import Manager
 from .package import (
     BUILTIN_SCHEME,
@@ -343,8 +342,8 @@ def cmd_install(
             name = info.package.qualified_name()
 
             if "test_command" not in info.metadata:
-                LOG.info(
-                    f'Skipping unit tests for "{name}": no test_command in metadata',
+                UI.verbose(
+                    f"Skipping testing for [zkg.pkg]{name}[/zkg.pkg]: no test_command in metadata",
                 )
                 continue
 
@@ -1165,9 +1164,8 @@ def cmd_upgrade(
                 sys.exit(1)
 
             if "test_command" not in next_info.metadata:
-                LOG.info(
-                    'Skipping unit tests for "%s": no test_command in metadata',
-                    name,
+                UI.verbose(
+                    f"Skipping testing for [zkg.pkg]{name}[/zkg.pkg]: no test_command in metadata",
                 )
                 continue
 
@@ -1948,9 +1946,7 @@ def cmd_create(
     try:
         tmpl = Template.load(tmplname, args.version)
     except LoadError as error:
-        msg = f"problem while loading template {tmplname}: {error}"
-        LOG.exception(msg)
-        UI.error(msg)
+        UI.exception(f"problem while loading template {tmplname}: {error}")
         sys.exit(1)
 
     try:
@@ -2020,9 +2016,8 @@ def cmd_create(
                         sys.exit(1)
                 try:
                     delete_path(args.packagedir)
-                    LOG.info(
-                        "Removed existing package directory %s",
-                        args.packagedir,
+                    UI.verbose(
+                        f"Removed existing package directory [zkg.file]{args.packagedir}[/zkg.file]",
                     )
                 except OSError as err:
                     UI.error(
@@ -2035,9 +2030,7 @@ def cmd_create(
             UI.error("template instantiation failed, " + str(error))
             sys.exit(1)
     except Exception as error:
-        msg = f"problem during template instantiation: {error}"
-        LOG.exception(msg)
-        UI.error(msg)
+        UI.exception(f"problem during template instantiation: {error}")
         sys.exit(1)
 
 
@@ -2054,9 +2047,7 @@ def cmd_template_info(
     try:
         tmpl = Template.load(tmplname, args.version)
     except LoadError as error:
-        msg = f"problem while loading template {tmplname}: {error}"
-        LOG.exception(msg)
-        UI.error(msg)
+        UI.exception(f"problem while loading template {tmplname}: {error}")
         sys.exit(1)
 
     tmplinfo = tmpl.info()

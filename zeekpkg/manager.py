@@ -46,9 +46,6 @@ from .config import (
 from .consts import (
     VERSION,
 )
-from .logs import (
-    LOG,
-)
 from .package import (
     BUILTIN_SCHEME,
     BUILTIN_SOURCE,
@@ -77,6 +74,9 @@ from .package import (
 from .source import (
     AggregationResults,
     Source,
+)
+from .ui import (
+    UI,
 )
 from .uservar import (
     UserVar,
@@ -201,7 +201,7 @@ class Manager:
             OSError: when a package manager state directory can't be created
             IOError: when a package manager state file can't be created
         """
-        LOG.debug("init Manager version %s", VERSION)
+        UI.debug(f"init Manager version [zkg.ver]{VERSION}[/zkg.ver]")
         self.sources: dict[str, Source] = {}
         self.installed_pkgs: dict[str, InstalledPackage] = {}
         self._builtin_packages: list[PackageInfo] | None = (
@@ -251,10 +251,9 @@ class Manager:
         if os.path.realpath(prev_script_dir) != os.path.realpath(
             CONFIG.packages_script_dir(),
         ):
-            LOG.info(
-                "relocating script_dir %s -> %s",
-                prev_script_dir,
-                CONFIG.packages_script_dir(),
+            UI.verbose(
+                f"relocating script_dir [zkg.file]{prev_script_dir}[/zkg.file]"
+                f" -> [zkg.file]{CONFIG.packages_script_dir()}[/zkg.file]",
             )
 
             if os.path.exists(prev_script_dir):
@@ -268,10 +267,16 @@ class Manager:
                 new_link = os.path.join(CONFIG.zeek_path(), pkg_name)
 
                 if os.path.lexists(old_link):
-                    LOG.info("moving package link %s -> %s", old_link, new_link)
+                    UI.verbose(
+                        f"moving package link [zkg.file]{old_link}[/zkg.file]"
+                        f" -> [zkg.file]{new_link}[/zkg.file]",
+                    )
                     shutil.move(old_link, new_link)
                 else:
-                    LOG.info("skip moving package link %s -> %s", old_link, new_link)
+                    UI.verbose(
+                        f"skip moving package link [zkg.file]{old_link}[/zkg.file]"
+                        f" -> [zkg.file]{new_link}[/zkg.file]",
+                    )
 
             need_manifest_update = True
             refresh_bin_dir = True
@@ -279,10 +284,9 @@ class Manager:
         if os.path.realpath(prev_plugin_dir) != os.path.realpath(
             CONFIG.packages_plugin_dir(),
         ):
-            LOG.info(
-                "relocating plugin_dir %s -> %s",
-                prev_plugin_dir,
-                CONFIG.packages_plugin_dir(),
+            UI.verbose(
+                f"relocating plugin_dir [zkg.file]{prev_plugin_dir}[/zkg.file]"
+                f" -> [zkg.file]{CONFIG.packages_plugin_dir()}[/zkg.file]",
             )
 
             if os.path.exists(prev_plugin_dir):
@@ -295,7 +299,10 @@ class Manager:
         if prev_bin_dir and os.path.realpath(prev_bin_dir) != os.path.realpath(
             CONFIG.bin_dir(),
         ):
-            LOG.info("relocating bin_dir %s -> %s", prev_bin_dir, CONFIG.bin_dir())
+            UI.verbose(
+                f"relocating bin_dir [zkg.file]{prev_bin_dir}[/zkg.file]"
+                f" -> [zkg.file]{CONFIG.bin_dir()}[/zkg.file]",
+            )
             need_manifest_update = True
             refresh_bin_dir = True
             relocating_bin_dir = True
@@ -378,19 +385,15 @@ class Manager:
                     try:
                         path_disabled.rename(path_enabled)
                     except OSError as exception:
-                        LOG.error(
-                            "could not enable plugin: %s %s",
-                            type(exception).__name__,
-                            exception,
+                        UI.error(
+                            f"could not enable plugin: {type(exception).__name__} {exception}",
                         )
             elif path_enabled.exists():
                 try:
                     path_enabled.rename(path_disabled)
                 except OSError as exception:
-                    LOG.error(
-                        "could not disable plugin: %s %s",
-                        type(exception).__name__,
-                        exception,
+                    UI.error(
+                        f"could not disable plugin: {type(exception).__name__} {exception}",
                     )
 
     def _read_manifest(self) -> tuple[str, str, str]:
@@ -480,7 +483,7 @@ class Manager:
             existing_source = self.sources[name]
 
             if existing_source.git_url == git_url:
-                LOG.debug('duplicate source "%s"', name)
+                UI.debug(f"duplicate source [zkg.src]{name}[/zkg.src]")
                 return ""
 
             return (
@@ -522,7 +525,7 @@ class Manager:
         except git.GitCommandError as error:
             # XXX seems this could also error when requesting nonexisting
             # branches/versions?
-            LOG.warning("failed to clone git repo: %s", error)
+            UI.verbose(f"git error while cloning source repo {git_url}: {error}")
             return "failed to clone git repo"
         else:
             self.sources[name] = source
@@ -555,7 +558,7 @@ class Manager:
         try:
             zeek_executable = get_zeek_info().zeek
         except LookupError as e:
-            LOG.warning("unable to discover builtin-packages: %s", str(e))
+            UI.verbose(f"unable to discover builtin-packages: {e}")
             return self._builtin_packages
 
         try:
@@ -567,14 +570,14 @@ class Manager:
             build_info = json.loads(build_info_str)
         except subprocess.CalledProcessError:
             # Not a warning() due to being a bit noisy.
-            LOG.info("unable to discover built-in packages - requires Zeek 6.0")
+            UI.verbose("unable to discover built-in packages - requires Zeek 6.0")
             return self._builtin_packages
         except json.JSONDecodeError as e:
-            LOG.error("unable to parse Zeek's build info output: %s", str(e))
+            UI.error(f"unable to parse Zeek's build info output: {e}")
             return self._builtin_packages
 
         if "zkg" not in build_info or "provides" not in build_info["zkg"]:
-            LOG.warning("missing zkg.provides entry in zeek --build-info output")
+            UI.warning("missing zkg.provides entry in zeek --build-info output")
             return self._builtin_packages
 
         self._builtin_packages_discovered = True
@@ -584,7 +587,7 @@ class Manager:
             commit = p.get("commit")
 
             if not name or not version:
-                LOG.warning("zkg.provides entry missing name or version: %s", repr(p))
+                UI.warning(f"zkg.provides entry missing name or version: {p}")
                 continue
 
             orig_version = version
@@ -596,11 +599,9 @@ class Manager:
             if m:
                 version = m.group(1)
 
-            LOG.debug(
-                "found built-in package %s with version %s (%s)",
-                name,
-                version,
-                orig_version,
+            UI.debug(
+                f"found built-in package [zkg.pkg]{name}[/zkg.pkg] with version"
+                f" [zkg.ver]{version}[/zkg.ver] ([zkg.ver]{orig_version}[/zkg.ver])",
             )
 
             self._builtin_packages.append(
@@ -804,10 +805,9 @@ class Manager:
             config_file_path = os.path.join(clone_dir, config_file)
 
             if not os.path.isfile(config_file_path):
-                LOG.info(
-                    "package '%s' claims config file at '%s', but it does not exist",
-                    pkg_name,
-                    config_file,
+                UI.verbose(
+                    f"package [zkg.pkg]{pkg_name}[/zkg.pkg] claims config file"
+                    f" at [zkg.file]{config_file}[/zkg.file], which does not exist",
                 )
                 continue
 
@@ -861,10 +861,9 @@ class Manager:
             their_config_file_path = os.path.join(clone_dir, config_file)
 
             if not os.path.isfile(their_config_file_path):
-                LOG.info(
-                    "package '%s' claims config file at '%s', but it does not exist",
-                    pkg_name,
-                    config_file,
+                UI.verbose(
+                    f"package [zkg.pkg]{pkg_name}[/zkg.pkg] claims config file"
+                    f" at [zkg.file]{config_file}[/zkg.file], which does not exist",
                 )
                 continue
 
@@ -875,11 +874,10 @@ class Manager:
                 )
 
                 if not os.path.isfile(our_config_file_path):
-                    LOG.info(
-                        "package '%s' config file '%s' not found in plugin_dir: %s",
-                        pkg_name,
-                        config_file,
-                        our_config_file_path,
+                    UI.verbose(
+                        f"package [zkg.pkg]{pkg_name}[/zkg.pkg] config file"
+                        f" [zkg.file]{config_file}[/zkg.file] not found in plugin_dir:"
+                        f" [zkg.file]{our_config_file_path}[/zkg.file]",
                     )
                     continue
             elif config_file.startswith(script_dir):
@@ -889,20 +887,19 @@ class Manager:
                 )
 
                 if not os.path.isfile(our_config_file_path):
-                    LOG.info(
-                        "package '%s' config file '%s' not found in script_dir: %s",
-                        pkg_name,
-                        config_file,
-                        our_config_file_path,
+                    UI.verbose(
+                        f"package [zkg.pkg]{pkg_name}[/zkg.pkg] config file "
+                        f" [zkg.file]{config_file}[/zkg.file] not found in script_dir:"
+                        f" [zkg.file]{our_config_file_path}[/zkg.file]",
                     )
                     continue
             else:
                 # Their config file is outside script/plugin install dirs,
                 # so no way user has it even installed, much less modified.
-                LOG.warning(
-                    "package '%s' config file '%s' not within plugin_dir or script_dir",
-                    pkg_name,
-                    config_file,
+                UI.verbose(
+                    f"package [zkg.pkg]{pkg_name}[/zkg.pkg] config file "
+                    f" [zkg.file]{config_file}[/zkg.file] neither in plugin_dir"
+                    f" nor script_dir",
                 )
                 continue
 
@@ -1020,23 +1017,23 @@ class Manager:
         """
         for ipkg in self.installed_packages():
             if ipkg.is_builtin():
-                LOG.debug(
-                    'skipping refresh of built-in package "%s"',
-                    ipkg.package.name,
+                UI.debug(
+                    f"skipping refresh of built-in package"
+                    f" [zkg.pkg]{ipkg.package.name}[/zkg.pkg]",
                 )
                 continue
 
             clonepath = os.path.join(CONFIG.packages_clone_dir(), ipkg.package.name)
             clone = git.Repo(clonepath)
-            LOG.debug("fetch package %s", ipkg.package.qualified_name())
+            UI.debug(
+                f"fetch package [zkg.pkg]{ipkg.package.qualified_name()}[/zkg.pkg]",
+            )
 
             try:
                 clone.git.fetch("--recurse-submodules=yes")
             except git.GitCommandError as error:
-                LOG.warning(
-                    "failed to fetch package %s: %s",
-                    ipkg.package.qualified_name(),
-                    error,
+                UI.warning(
+                    f"failed to fetch package [zkg.pkg]{ipkg.package.qualified_name()}[/zkg.pkg]: {error}",
                 )
 
             assert ipkg.status.current_version
@@ -1072,19 +1069,16 @@ class Manager:
 
         """
         pkg_path = canonical_url(pkg_path)
-        LOG.debug('upgrading "%s"', pkg_path)
+        UI.debug(f"upgrading [zkg.pkg]{pkg_path}[/zkg.pkg]")
         ipkg = self.find_installed_package(pkg_path)
 
         if not ipkg:
-            LOG.info('upgrading "%s": no matching package', pkg_path)
             return "no such package installed"
 
         if ipkg.status.is_pinned:
-            LOG.info('upgrading "%s": package is pinned', pkg_path)
             return "package is pinned"
 
         if not ipkg.status.is_outdated:
-            LOG.info('upgrading "%s": package not outdated', pkg_path)
             return "package is not outdated"
 
         clonepath = os.path.join(CONFIG.packages_clone_dir(), ipkg.package.name)
@@ -1131,15 +1125,17 @@ class Manager:
         """
 
         pkg_path = canonical_url(pkg_path)
-        LOG.debug('removing "%s"', pkg_path)
+        UI.debug(f"removing [zkg.pkg]{pkg_path}[/zkg.pkg]")
         ipkg = self.find_installed_package(pkg_path)
 
         if not ipkg:
-            LOG.info('removing "%s": could not find matching package', pkg_path)
+            UI.verbose(
+                f"removing [zkg.pkg]{pkg_path}[/zkg.pkg]: could not find matching package",
+            )
             return False
 
         if ipkg.is_builtin():
-            LOG.error('cannot remove built-in package "%s"', pkg_path)
+            UI.error(f"cannot remove built-in package [zkg.pkg]{pkg_path}[/zkg.pkg]")
             return False
 
         self.unload(pkg_path)
@@ -1157,15 +1153,17 @@ class Manager:
             link = os.path.join(CONFIG.bin_dir(), os.path.basename(exe))
             if os.path.islink(link):
                 try:
-                    LOG.debug("removing link %s", link)
+                    UI.debug(f"removing link [zkg.file]{link}[/zkg.file]")
                     os.unlink(link)
                 except OSError as err:
-                    LOG.warning("cannot remove link for %s", err)
+                    UI.warning(
+                        f"cannot remove link for [zkg.file]{exe}[/zkg.file]: {err}",
+                    )
 
         del self.installed_pkgs[pkg_to_remove.name]
         self._write_manifest()
 
-        LOG.debug('removed "%s"', pkg_path)
+        UI.debug(f"removed [zkg.file]{pkg_path}[/zkg.file]")
         return True
 
     def pin(self, pkg_path: str) -> InstalledPackage | None:
@@ -1188,20 +1186,20 @@ class Manager:
             IOError: when the manifest file can't be written
         """
         pkg_path = canonical_url(pkg_path)
-        LOG.debug('pinning "%s"', pkg_path)
+        UI.debug(f"pinning [zkg.pkg]{pkg_path}[/zkg.pkg]")
         ipkg = self.find_installed_package(pkg_path)
 
         if not ipkg:
-            LOG.info('pinning "%s": no matching package', pkg_path)
+            UI.verbose(f"pinning [zkg.pkg]{pkg_path}[/zkg.pkg]: no matching package")
             return None
 
         if ipkg.status.is_pinned:
-            LOG.debug('pinning "%s": already pinned', pkg_path)
+            UI.debug(f"pinning [zkg.pkg]{pkg_path}[/zkg.pkg]: already pinned")
             return ipkg
 
         ipkg.status.is_pinned = True
         self._write_manifest()
-        LOG.debug('pinned "%s"', pkg_path)
+        UI.debug(f"pinned [zkg.pkg]{pkg_path}[/zkg.pkg]")
         return ipkg
 
     def unpin(self, pkg_path: str) -> InstalledPackage | None:
@@ -1222,20 +1220,20 @@ class Manager:
             IOError: when the manifest file can't be written
         """
         pkg_path = canonical_url(pkg_path)
-        LOG.debug('unpinning "%s"', pkg_path)
+        UI.debug(f"unpinning [zkg.pkg]{pkg_path}[/zkg.pkg]")
         ipkg = self.find_installed_package(pkg_path)
 
         if not ipkg:
-            LOG.info('unpinning "%s": no matching package', pkg_path)
+            UI.verbose(f"unpinning [zkg.pkg]{pkg_path}[/zkg.pkg]: no matching package")
             return None
 
         if not ipkg.status.is_pinned:
-            LOG.debug('unpinning "%s": already unpinned', pkg_path)
+            UI.debug(f"unpinning [zkg.pkg]{pkg_path}[/zkg.pkg]: already unpinned")
             return ipkg
 
         ipkg.status.is_pinned = False
         self._write_manifest()
-        LOG.debug('unpinned "%s"', pkg_path)
+        UI.debug(f"unpinned [zkg.pkg]{pkg_path}[/zkg.pkg]")
         return ipkg
 
     def load(self, pkg_path: str) -> str:
@@ -1259,15 +1257,15 @@ class Manager:
             IOError: if the loader script or manifest can't be written
         """
         pkg_path = canonical_url(pkg_path)
-        LOG.debug('loading "%s"', pkg_path)
+        UI.debug(f"loading [zkg.pkg]{pkg_path}[/zkg.pkg]")
         ipkg = self.find_installed_package(pkg_path)
 
         if not ipkg:
-            LOG.info('loading "%s": no matching package', pkg_path)
+            UI.verbose(f"loading [zkg.pkg]{pkg_path}[/zkg.pkg]: no matching package")
             return "no such package"
 
         if ipkg.status.is_loaded:
-            LOG.debug('loading "%s": already loaded', pkg_path)
+            UI.debug(f"loading [zkg.pkg]{pkg_path}[/zkg.pkg]: already loaded")
             return ""
 
         pkg_load_script = os.path.join(
@@ -1277,10 +1275,9 @@ class Manager:
         )
 
         if not os.path.exists(pkg_load_script) and not self.has_plugin(ipkg):
-            LOG.debug(
-                'loading "%s": %s not found and package has no plugin',
-                pkg_path,
-                pkg_load_script,
+            UI.debug(
+                f"loading [zkg.pkg]{pkg_path}[/zkg.pkg]: [zkg.file]{pkg_load_script}[/zkg.file]"
+                f" not found and package has no plugin",
             )
             return "no __load__.zeek within package script_dir and no plugin included"
 
@@ -1288,7 +1285,7 @@ class Manager:
         self._write_autoloader()
         self._write_manifest()
         self._write_plugin_magic(ipkg)
-        LOG.debug('loaded "%s"', pkg_path)
+        UI.debug(f"loaded [zkg.pkg]{pkg_path}[/zkg.pkg]")
         return ""
 
     def loaded_package_states(self) -> dict[str, bool]:
@@ -1523,22 +1520,22 @@ class Manager:
             IOError: if the loader script or manifest can't be written
         """
         pkg_path = canonical_url(pkg_path)
-        LOG.debug('unloading "%s"', pkg_path)
+        UI.debug(f"unloading [zkg.pkg]{pkg_path}[/zkg.pkg]")
         ipkg = self.find_installed_package(pkg_path)
 
         if not ipkg:
-            LOG.info('unloading "%s": no matching package', pkg_path)
+            UI.verbose(f"unloading [zkg.pkg]{pkg_path}[/zkg.pkg]: no matching package")
             return False
 
         if not ipkg.status.is_loaded:
-            LOG.debug('unloading "%s": already unloaded', pkg_path)
+            UI.debug(f"unloading [zkg.pkg]{pkg_path}[/zkg.pkg]: already unloaded")
             return True
 
         ipkg.status.is_loaded = False
         self._write_autoloader()
         self._write_manifest()
         self._write_plugin_magic(ipkg)
-        LOG.debug('unloaded "%s"', pkg_path)
+        UI.debug(f"unloaded [zkg.pkg]{pkg_path}[/zkg.pkg]")
         return True
 
     def bundle_info(
@@ -1564,7 +1561,7 @@ class Manager:
             contained in the bundle.
 
         """
-        LOG.debug('getting bundle info for file "%s"', bundle_file)
+        UI.debug(f"getting bundle info for file [zkg.file]{bundle_file}[/zkg.file]")
         bundle_dir = os.path.join(CONFIG.scratch_dir(), "bundle")
         delete_path(bundle_dir)
         make_dir(bundle_dir)
@@ -1594,7 +1591,9 @@ class Manager:
                 canonical=True,
             )
             pkg_path = os.path.join(bundle_dir, package.name)
-            LOG.debug('getting info for bundled package "%s"', package.name)
+            UI.debug(
+                f"getting info for bundled package [zkg.pkg]{package.name}[/zkg.pkg]",
+            )
             pkg_info = self.info(pkg_path, version=version, prefer_installed=False)
             infos.append((git_url, version, pkg_info))
 
@@ -1640,7 +1639,7 @@ class Manager:
             reason = f"Package name {name!r} is not valid."
             return PackageInfo(Package(git_url=pkg_path), invalid_reason=reason)
 
-        LOG.debug('getting info on "%s"', pkg_path)
+        UI.debug(f"getting info on [zkg.pkg]{pkg_path}[/zkg.pkg]")
 
         # Handle built-in packages like installed packages
         # but avoid looking up the repository information.
@@ -1667,13 +1666,13 @@ class Manager:
             try:
                 return self._info(package, status, version, update_submodules)
             except git.GitCommandError as error:
-                LOG.info(
-                    'getting info on "%s": invalid git repo path: %s',
-                    pkg_path,
-                    error,
+                UI.warning(
+                    f"getting info on [zkg.pkg]{pkg_path}[/zkg.pkg]: invalid git repo path: {error}",
                 )
 
-            LOG.info('getting info on "%s": matched no source package', pkg_path)
+            UI.verbose(
+                f"getting info on [zkg.pkg]{pkg_path}[/zkg.pkg]: matched no source package",
+            )
             reason = (
                 "package name not found in sources and also"
                 " not a usable git URL (invalid or inaccessible,"
@@ -1683,14 +1682,13 @@ class Manager:
 
         if len(matches) > 1:
             matches_string = [match.qualified_name() for match in matches]
-            LOG.info(
-                'getting info on "%s": matched multiple packages: %s',
-                pkg_path,
-                matches_string,
+            UI.verbose(
+                f"getting info on [zkg.pkg]{pkg_path}[/zkg.pkg]:"
+                f" matched multiple packages: {matches_string}",
             )
             reason = (
-                f'"{pkg_path}" matches multiple packages, '
-                f"try a more specific name from: {matches_string}"
+                f"[zkg.pkg]{pkg_path}[/zkg.pkg] matches multiple packages,"
+                f" try a more specific name from: {matches_string}"
             )
 
             raise LookupError(reason)
@@ -1700,7 +1698,10 @@ class Manager:
         try:
             return self._info(package, status, version, update_submodules)
         except git.GitCommandError as error:
-            LOG.info('getting info on "%s": invalid git repo path: %s', pkg_path, error)
+            UI.warning(
+                f"getting info on [zkg.pkg]{pkg_path}[/zkg.pkg]:"
+                f" invalid git repo path: {error}",
+            )
             reason = "git repository is either invalid or unreachable"
             return PackageInfo(package=package, invalid_reason=reason, status=status)
 
@@ -1732,10 +1733,15 @@ class Manager:
         try:
             git_checkout(clone, version, update_submodules)
         except git.GitCommandError:
-            reason = f'no such commit, branch, or version tag: "{version}"'
+            reason = (
+                f"no such commit, branch, or version tag: [zkg.ver]{version}[/zkg.ver]"
+            )
             return PackageInfo(package=package, status=status, invalid_reason=reason)
 
-        LOG.debug('checked out "%s", branch/version "%s"', package, version)
+        UI.debug(
+            f"checked out [zkg.pkg]{package}[/zkg.pkg], branch/version"
+            f" [zkg.ver]{version}[/zkg.ver]",
+        )
         return _info_from_clone(clone, package, status, version)
 
     def package_versions(self, installed_package: InstalledPackage) -> list[str]:
@@ -1915,11 +1921,8 @@ class Manager:
 
                 dep_name_orig = dep_name
                 dep_name = info2.package.qualified_name()
-                LOG.debug(
-                    'dependency "%s" of "%s" resolved to "%s"',
-                    dep_name_orig,
-                    node.name,
-                    dep_name,
+                UI.debug(
+                    f'dependency "{dep_name_orig}" of "{node.name}" resolved to "{dep_name}"',
                 )
 
                 if dep_name in graph:
@@ -1952,7 +1955,7 @@ class Manager:
                 )
                 graph["zeek"] = node
             else:
-                LOG.warning('could not get zeek version: no "zeek-config" in PATH ?')
+                UI.warning('could not get zeek version: no "zeek-config" in PATH ?')
 
             node = Node("zkg")
             node.installed_version = PackageVersion(
@@ -2294,7 +2297,7 @@ class Manager:
             str: an empty string if the operation was successful, else an error
             message indicated what went wrong.
         """
-        LOG.debug('unbundle "%s"', bundle_file)
+        UI.debug(f"unbundle [zkg.file]{bundle_file}[/zkg.file]")
         bundle_dir = os.path.join(CONFIG.scratch_dir(), "bundle")
         delete_path(bundle_dir)
         make_dir(bundle_dir)
@@ -2328,7 +2331,7 @@ class Manager:
             delete_path(clonepath)
             shutil.move(os.path.join(bundle_dir, package.name), clonepath)
 
-            LOG.debug('unbundle installing "%s"', package.name)
+            UI.debug(f"unbundle installing [zkg.pkg]{package.name}[/zkg.pkg]")
             if err := self._install(package, version, use_existing_clone=True):
                 return err
 
@@ -2343,25 +2346,23 @@ class Manager:
                 for dep, version_spec in deps.items():
                     ipkg = self.find_installed_package(dep)
                     if ipkg is None:
-                        LOG.warning(
-                            'dependency "%s" of bundled "%s" missing',
-                            dep,
-                            git_url,
+                        UI.warning(
+                            f"dependency [zkg.pkg]{dep}[/zkg.pkg] of bundled"
+                            f" [zkg.pkg]{git_url}[/zkg.pkg] missing",
                         )
                         continue
 
                     _, fullfills = ipkg.fullfills(version_spec)
                     if not fullfills:
-                        LOG.warning(
-                            'dependency "%s" (%s) of "%s" not compatible with "%s"',
-                            dep,
-                            ipkg.status.current_version,
-                            git_url,
-                            version_spec,
+                        UI.warning(
+                            f"dependency [zkg.pkg]{dep}[/zkg.pkg]"
+                            f" ([zkg.ver]{ipkg.status.current_version}[/zkg.ver])"
+                            f" of [zkg.pkg]{git_url}[/zkg.pkg]"
+                            f" not compatible with [zkg.ver]{version_spec}[/zkg.ver]",
                         )
 
             else:
-                LOG.warning('package "%s" not installed?', git_url)
+                UI.warning(f"package [zkg.pkg]{git_url}[/zkg.pkg] not installed?")
                 continue
 
         return ""
@@ -2402,7 +2403,7 @@ class Manager:
             is considered an error.
         """
         pkg_path = canonical_url(pkg_path)
-        LOG.debug('testing "%s"', pkg_path)
+        UI.debug(f"testing [zkg.pkg]{pkg_path}[/zkg.pkg]")
         pkg_info = self.info(pkg_path, version=version, prefer_installed=False)
 
         if pkg_info.invalid_reason:
@@ -2427,7 +2428,9 @@ class Manager:
 
         env, err = stage.get_subprocess_env()
         if env is None:
-            LOG.warning("%s when running tests for %s", err, package.name)
+            UI.warning(
+                f"{err} when running tests for [zkg.pkg]{package.name}[/zkg.pkg]",
+            )
             assert stage.state_dir
             return (err, False, stage.state_dir)
 
@@ -2440,10 +2443,9 @@ class Manager:
         # Clone all packages, checkout right version, and build/install to
         # staging area.
         for info, version in reversed(pkgs):
-            LOG.debug(
-                'preparing "%s" for testing: version %s',
-                info.package.name,
-                version,
+            UI.debug(
+                f"preparing [zkg.pkg]{info.package.name}[/zkg.pkg] for"
+                f" testing: version [zkg.ver]{version}[/zkg.ver]",
             )
             clonepath = os.path.join(stage.clone_dir, info.package.name)
 
@@ -2457,7 +2459,7 @@ class Manager:
             try:
                 clone = _clone_package(info.package, clonepath, version)
             except git.GitCommandError as error:
-                LOG.warning("failed to clone git repo: %s", error)
+                UI.verbose(f"failed to clone git repo: {error}")
                 assert stage.state_dir
                 return (
                     f"failed to clone {info.package.git_url}",
@@ -2468,7 +2470,7 @@ class Manager:
             try:
                 git_checkout(clone, version)
             except git.GitCommandError as error:
-                LOG.warning("failed to checkout git repo version: %s", error)
+                UI.verbose(f"failed to checkout git repo version: {error}")
                 assert stage.state_dir
                 return (
                     f"failed to checkout {version} of {info.package.git_url}",
@@ -2488,7 +2490,7 @@ class Manager:
             test_pkgs = [(pkg_info, version)]
 
         for info, _ in reversed(test_pkgs):
-            LOG.info('testing "%s"', package)
+            UI.verbose(f"testing [zkg.pkg]{package}[/zkg.pkg]")
             # Interpolate the test command:
             metadata, invalid_reason = self._interpolate_package_metadata(
                 info.metadata,
@@ -2500,23 +2502,19 @@ class Manager:
 
             assert metadata
             if "test_command" not in metadata:
-                LOG.info(
-                    'Skipping unit tests for "%s": no test_command in metadata',
-                    info.package.qualified_name(),
+                UI.verbose(
+                    f"Skipping testing for [zkg.pkg]{info.package.qualified_name()}[/zkg.pkg]:"
+                    f" no test_command in metadata",
                 )
                 continue
 
             test_command = metadata["test_command"]
             cwd = os.path.join(stage.clone_dir, info.package.name)
 
-            LOG.debug(
-                'testing "%s": running test_command with cwd="%s", PATH="%s",'
-                ' and ZEEKPATH="%s": %s',
-                info.package.name,
-                cwd,
-                env["PATH"],
-                env["ZEEKPATH"],
-                test_command,
+            UI.debug(
+                f"testing [zkg.pkg]{info.package.name}[/zkg.pkg]:"
+                f' running test_command with cwd="{cwd}", PATH="{env["PATH"]}",'
+                f' and ZEEKPATH="{env["ZEEKPATH"]}": {test_command}',
             )
 
             bufsize = 4096
@@ -2533,11 +2531,9 @@ class Manager:
             testlog = self.package_test_log(info.package.name)
             try:
                 with open(testlog, "wb") as f:
-                    LOG.info(
-                        'testing "%s" in "%s": writing test log: %s',
-                        package,
-                        cwd,
-                        testlog,
+                    UI.verbose(
+                        f"testing [zkg.pkg]{package}[/zkg.pkg] in"
+                        f" [zkg.file]{cwd}[/zkg.file]: writing test log {testlog}",
                     )
 
                     f.write("=== STDERR ===\n".encode(std_encoding(sys.stderr)))
@@ -2563,12 +2559,9 @@ class Manager:
                             break
 
             except OSError as error:
-                LOG.warning(
-                    'testing "%s": failed to write test log %s %s: %s',
-                    package,
-                    testlog,
-                    error.errno,
-                    error.strerror,
+                UI.warning(
+                    f"testing [zkg.pkg]{package}[/zkg.pkg]: failed to write test log"
+                    f" {testlog} {error.errno}: {error.strerror}",
                 )
 
             rc = test.wait()
@@ -2626,7 +2619,9 @@ class Manager:
             explaining why it failed.
 
         """
-        LOG.debug('staging "%s": version %s', package, version)
+        UI.debug(
+            f"staging [zkg.pkg]{package}[/zkg.pkg]: version [zkg.ver]{version}[/zkg.ver]",
+        )
         metadata_file = pick_metadata_file(str(clone.working_dir))
         metadata_parser = configparser.ConfigParser(interpolation=None)
         invalid_reason: str | None = parse_package_metadata(
@@ -2647,10 +2642,8 @@ class Manager:
         assert interpolated_metadata
         build_command = interpolated_metadata.get("build_command", "")
         if build_command:
-            LOG.debug(
-                'building "%s": running build_command: %s',
-                package,
-                build_command,
+            UI.debug(
+                f"building [zkg.pkg]{package}[/zkg.pkg]: running build_command: {build_command}",
             )
             bufsize = 4096
             build = subprocess.Popen(
@@ -2666,10 +2659,8 @@ class Manager:
             buildlog = self.package_build_log(str(clone.working_dir))
             try:
                 with open(buildlog, "wb") as f:
-                    LOG.info(
-                        'installing "%s": writing build log: %s',
-                        package,
-                        buildlog,
+                    UI.verbose(
+                        f"installing [zkg.pkg]{package}[/zkg.pkg]: writing build log: {buildlog}",
                     )
 
                     f.write("=== STDERR ===\n".encode(std_encoding(sys.stderr)))
@@ -2695,12 +2686,9 @@ class Manager:
                             break
 
             except OSError as error:
-                LOG.warning(
-                    'installing "%s": failed to write build log %s %s: %s',
-                    package,
-                    buildlog,
-                    error.errno,
-                    error.strerror,
+                UI.warning(
+                    f"installing [zkg.pkg]{package}[/zkg.pkg]: failed to write build log"
+                    f" {buildlog} {error.errno}: {error.strerror}",
                 )
 
             returncode = build.wait()
@@ -2752,10 +2740,9 @@ class Manager:
             if "script_dir" in interpolated_metadata:
                 return f"no __load__.zeek file found in package's 'script_dir' : {pkg_script_dir}"
 
-            LOG.warning(
-                'installing "%s": no __load__.zeek in implicit'
+            UI.warning(
+                f"installing [zkg.pkg]{package}[/zkg.pkg]: no __load__.zeek in implicit"
                 " script_dir, skipped installing scripts",
-                package,
             )
 
         pkg_plugin_dir = interpolated_metadata.get("plugin_dir", "build")
@@ -2763,10 +2750,9 @@ class Manager:
         plugin_dir_dst = os.path.join(stage.plugin_dir, package.name)
 
         if not os.path.exists(plugin_dir_src):
-            LOG.info(
-                'installing "%s": package "plugin_dir" does not exist: %s',
-                package,
-                pkg_plugin_dir,
+            UI.verbose(
+                f'installing [zkg.pkg]{package}[/zkg.pkg]: package "plugin_dir"'
+                f" does not exist: [zkg.file]{pkg_plugin_dir}[/zkg.file]",
             )
 
             if pkg_plugin_dir != "build":
@@ -2823,22 +2809,24 @@ class Manager:
             IOError: if the manifest can't be written
         """
         pkg_path = canonical_url(pkg_path)
-        LOG.debug('installing "%s"', pkg_path)
+        UI.debug(f"installing [zkg.pkg]{pkg_path}[/zkg.pkg]")
         ipkg = self.find_installed_package(pkg_path)
 
         if ipkg:
             conflict = ipkg.package
 
             if conflict.qualified_name().endswith(pkg_path):
-                LOG.debug('installing "%s": re-install: %s', pkg_path, conflict)
+                UI.debug(
+                    f"installing [zkg.pkg]{pkg_path}[/zkg.pkg]:"
+                    f" re-install [zkg.pkg]{conflict}[/zkg.pkg]",
+                )
                 clonepath = os.path.join(CONFIG.packages_clone_dir(), conflict.name)
                 _clone_package(conflict, clonepath, version)
                 return self._install(conflict, version)
 
-            LOG.info(
-                'installing "%s": matched already installed package: %s',
-                pkg_path,
-                conflict,
+            UI.verbose(
+                f"installing [zkg.pkg]{pkg_path}[/zkg.pkg]: matched"
+                f" already installed package: [zkg.pkg]{conflict}[/zkg.pkg]",
             )
             return (
                 f'package with name "{conflict.name}" ({conflict}) is already installed'
@@ -2851,29 +2839,34 @@ class Manager:
                 package = Package(git_url=pkg_path)
                 return self._install(package, version)
             except git.GitCommandError as error:
-                LOG.info('installing "%s": invalid git repo path: %s', pkg_path, error)
+                UI.verbose(
+                    f"installing [zkg.pkg]{pkg_path}[/zkg.pkg]: invalid git repo path: {error}",
+                )
 
-            LOG.info('installing "%s": matched no source package', pkg_path)
+            UI.verbose(
+                f"installing [zkg.pkg]{pkg_path}[/zkg.pkg]: matched no source package",
+            )
             return "package not found in sources and also not a valid git URL"
 
         if len(matches) > 1:
             matches_string = [match.qualified_name() for match in matches]
-            LOG.info(
-                'installing "%s": matched multiple packages: %s',
-                pkg_path,
-                matches_string,
+            UI.verbose(
+                f"installing [zkg.pkg]{pkg_path}[/zkg.pkg]:"
+                f" matched multiple packages: {matches_string}",
             )
 
             return (
-                f'"{pkg_path}" matches multiple packages, '
+                f"[zkg.pkg]{pkg_path}[/zkg.pkg] matches multiple packages, "
                 f"try a more specific name from: {matches_string}"
             )
 
         try:
             return self._install(matches[0], version)
         except git.GitCommandError as error:
-            LOG.warning('installing "%s": source package git repo is invalid', pkg_path)
-            return f'failed to clone package "{pkg_path}": {error}'
+            UI.warning(
+                f"installing [zkg.pkg]{pkg_path}[/zkg.pkg]: source package git repo is invalid",
+            )
+            return f"failed to clone package [zkg.pkg]{pkg_path}[/zkg.pkg]: {error}"
 
     def _validate_alias_conflict(
         self,
@@ -2968,10 +2961,8 @@ class Manager:
                 if version in branches:
                     status.tracking_method = TRACKING_METHOD_BRANCH
                 else:
-                    LOG.info(
-                        'branch "%s" not in available branches: %s',
-                        version,
-                        branches,
+                    UI.verbose(
+                        f"branch [zkg.ver]{version}[/zkg.ver] not in available branches: {branches}",
                     )
                     return f'no such branch or version tag: "{version}"'
 
@@ -3025,7 +3016,7 @@ class Manager:
         self.installed_pkgs[package.name] = InstalledPackage(package, status)
         self._write_manifest()
         self._refresh_bin_dir(CONFIG.bin_dir())
-        LOG.debug('installed "%s"', package)
+        UI.debug(f"installed [zkg.pkg]{package}[/zkg.pkg]")
         return ""
 
     def _interpolate_package_metadata(
@@ -3081,10 +3072,12 @@ class Manager:
                     or not os.path.islink(dst)
                     or os.path.realpath(src) != os.path.realpath(dst)
                 ):
-                    LOG.debug("creating link %s -> %s", src, dst)
+                    UI.debug(
+                        f"creating link [zkg.file]{src}[/zkg.file] -> [zkg.file]{dst}[/zkg.file]",
+                    )
                     make_symlink(src, dst, force=True)
                 else:
-                    LOG.debug("link %s is up to date", dst)
+                    UI.debug(f"link [zkg.file[{dst}[/zkg.file] is up to date")
 
     # Remove all links in bin_dir that are associated with executables
     # coming with any of the currently installed package.
@@ -3095,9 +3088,9 @@ class Manager:
                 if os.path.islink(old):
                     try:
                         os.unlink(old)
-                        LOG.debug("removed link %s", old)
+                        UI.debug(f"removed link [zkg.file]{old}[/zkg.file[")
                     except Exception:
-                        LOG.warning("failed to remove link %s", old)
+                        UI.warning(f"failed to remove link [zkg.file]{old}[/zkg.file]")
 
 
 def _get_branch_names(clone: git.Repo) -> list[str]:
@@ -3211,11 +3204,14 @@ def _copy_package_dir(
 
         for err in errors:
             src, dst, msg = err
-            reason = f"failed to copy {dirname}: {src} -> {dst}: {msg}"
+            reason = (
+                f"failed to copy [zkg.file]{dirname}[/zkg.file]:"
+                f" [zkg.file]{src}[/zkg.file] -> [zkg.file]{dst}[/zkg.file]: {msg}"
+            )
             reasons += "\n" + reason
-            LOG.warning('installing "%s": %s', package, reason)
+            UI.verbose(f"installing [zkg.pkg]{package}[/zkg.pkg]: {reason}")
 
-        return f"failed to copy package {dirname}: {reasons}"
+        return f"failed to copy package [zkg.pkg]{dirname}[/zkg.pkg]: {reasons}"
 
     return ""
 
@@ -3292,12 +3288,12 @@ def _info_from_clone(
         os.path.basename(metadata_file) == LEGACY_METADATA_FILENAME
         and package.qualified_name() not in _legacy_metadata_warnings
     ):
-        LOG.warning(
-            "Package %s is using the legacy bro-pkg.meta metadata file. "
+        UI.warning(
+            f"Package [zkg.pkg]{package.qualified_name()}[/zkg.pkg] "
+            "uses the legacy bro-pkg.meta metadata file. "
             "While bro-pkg.meta still functions, it is recommended to "
             "use zkg.meta instead for future-proofing. Please report this "
             "to the package maintainers.",
-            package.qualified_name(),
         )
         _legacy_metadata_warnings.add(package.qualified_name())
 
