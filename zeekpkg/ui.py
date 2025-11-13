@@ -209,8 +209,8 @@ class ColorMarkup(Markup):
         self.add_rule(Markup.Rule("[zkg.src]", "[blue1]"))
         self.add_rule(Markup.Rule("[zkg.file]", "[yellow]"))
         self.add_rule(Markup.Rule("[zkg.ver]", "[green]"))
-        self.add_rule(Markup.Rule("[zkg.debug]", "[grey66]"))
-        self.add_rule(Markup.Rule("[zkg.verbose]", "[grey66]"))
+        self.add_rule(Markup.Rule("[zkg.debug]", "[grey50]"))
+        self.add_rule(Markup.Rule("[zkg.verbose]", "[grey27]"))
         self.add_rule(Markup.Rule("[zkg.warn]", "[dark_orange]"))
         self.add_rule(Markup.Rule("[zkg.err]", "[red3]"))
 
@@ -232,7 +232,7 @@ class UserInterface(abc.ABC):
         end: str = "\n",
         flush: bool = False,
     ) -> None:
-        """Very verbose messaging, usually to stdout."""
+        """Very verbose messaging, usually to stderr."""
         pass
 
     @abc.abstractmethod
@@ -244,7 +244,7 @@ class UserInterface(abc.ABC):
         end: str = "\n",
         flush: bool = False,
     ) -> None:
-        """Verbose messaging, usually to stdout."""
+        """Verbose messaging, usually to stderr."""
         pass
 
     @abc.abstractmethod
@@ -387,7 +387,7 @@ class PlainUI(UserInterface):
         _ = prefix
         if self.verbosity >= 2:
             msgs = self._markup_list(msgs)
-            print(*msgs, sep=sep, end=end, file=self.stdout, flush=flush)
+            print(*msgs, sep=sep, end=end, file=self.stderr, flush=flush)
 
     def verbose(
         self,
@@ -400,7 +400,7 @@ class PlainUI(UserInterface):
         _ = prefix
         if self.verbosity >= 1:
             msgs = self._markup_list(msgs)
-            print(*msgs, sep=sep, end=end, file=self.stdout, flush=flush)
+            print(*msgs, sep=sep, end=end, file=self.stderr, flush=flush)
 
     def info(
         self,
@@ -642,10 +642,13 @@ try:
             _ = flush  # ignore flush, rich always flushes
             if self.verbosity >= 2:
                 msgs = self._markup_list(msgs)
-                self.outcon.print(
-                    "[zkg.debug]",
-                    *msgs,
-                    "[/zkg.debug]",
+                self.errcon.print(
+                    # rich requires markup opening & closing tags to be in
+                    # the same string, so we need to join the input into
+                    # a single one to colorize the whole output.
+                    self._markup("[zkg.debug]")
+                    + sep.join(msgs)
+                    + self._markup("[/zkg.debug]"),
                     sep=sep,
                     end=end,
                 )
@@ -661,10 +664,10 @@ try:
             _ = flush  # ignore flush, rich always flushes
             if self.verbosity >= 1:
                 msgs = self._markup_list(msgs)
-                self.outcon.print(
-                    "[zkg.verbose]",
-                    *msgs,
-                    "[/zkg.verbose]",
+                self.errcon.print(
+                    self._markup("[zkg.verbose]")
+                    + sep.join(msgs)
+                    + self._markup("[/zkg.verbose]"),
                     sep=sep,
                     end=end,
                 )
